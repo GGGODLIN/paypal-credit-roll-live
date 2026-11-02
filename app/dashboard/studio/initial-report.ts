@@ -43,6 +43,87 @@ const kpi = (text: string, value: { id: string; aggregation?: 'sum' | 'avg' | 'c
 
 // --- Pages ------------------------------------------------------------------------
 
+const creditRoll: AgPageState = {
+  id: 'credit-roll',
+  widgets: {
+    'kpi-crew-obligation': kpi(
+      'Locked crew obligation',
+      sum('crewSettlements.contractAmountUsd'),
+    ),
+    'kpi-verified-cues': kpi(
+      'Credit cues tracked',
+      countd('creditCues.cueId'),
+    ),
+    'kpi-crew-count': kpi(
+      'Crew records',
+      countd('crewSettlements.personId'),
+    ),
+    'kpi-avg-contract': kpi(
+      'Avg contract fee',
+      avg('crewSettlements.contractAmountUsd'),
+    ),
+    'credit-roll-stage': {
+      type: 'credit-roll-stage',
+      dataMapping: {
+        cols: [
+          { id: 'crewSettlements.personId' },
+          { id: 'crewSettlements.stageName' },
+          { id: 'crewSettlements.legalName' },
+          { id: 'crewSettlements.cutStatus' },
+          { id: 'crewSettlements.badgeStatus' },
+          sum('crewSettlements.contractAmountUsd'),
+        ],
+      },
+      format: title('Interactive Credit Roll Stage — Cut v1 vs Cut v2'),
+    } as unknown as NonNullable<AgPageState['widgets']>[string],
+    'ghost-patchbay': {
+      type: 'ghost-patchbay',
+      dataMapping: {
+        cols: [
+          { id: 'crewSettlements.personId' },
+          { id: 'crewSettlements.contractId' },
+          { id: 'crewSettlements.reconciliationStatus' },
+          { id: 'crewSettlements.transactionStatus' },
+          sum('crewSettlements.contractAmountUsd'),
+        ],
+      },
+      format: title('Ghost Diff & Identity Patchbay — PayPal Sandbox Settlement'),
+    } as unknown as NonNullable<AgPageState['widgets']>[string],
+    'crew-settlement-ledger': {
+      type: 'grid',
+      dataMapping: {
+        cols: [
+          { id: 'crewSettlements.personId' },
+          { id: 'crewSettlements.stageName' },
+          { id: 'crewSettlements.legalName' },
+          { id: 'crewSettlements.role' },
+          { id: 'crewSettlements.contractId' },
+          { id: 'crewSettlements.cutStatus' },
+          { id: 'crewSettlements.reconciliationStatus' },
+          { id: 'crewSettlements.badgeStatus' },
+          { id: 'crewSettlements.transactionStatus' },
+          { id: 'crewSettlements.paypalPayoutBatchId' },
+          { id: 'crewSettlements.paypalPayoutItemId' },
+          { id: 'crewSettlements.paypalInvoiceId' },
+          { id: 'crewSettlements.paypalOrderId' },
+          sum('crewSettlements.contractAmountUsd'),
+        ],
+      },
+      sort: [{ field: sum('crewSettlements.contractAmountUsd'), direction: 'desc' }],
+      format: title('Crew Settlement & Cue Ledger (Cross-Filtered by Contributor)'),
+    },
+  },
+  widgetLayout: {
+    'kpi-crew-obligation': at(0, 0, 6, 7),
+    'kpi-verified-cues': at(6, 0, 6, 7),
+    'kpi-crew-count': at(12, 0, 6, 7),
+    'kpi-avg-contract': at(18, 0, 6, 7),
+    'credit-roll-stage': at(0, 7, 12, 22),
+    'ghost-patchbay': at(12, 7, 12, 22),
+    'crew-settlement-ledger': at(0, 29, 24, 20),
+  },
+};
+
 const revenue: AgPageState = {
   id: 'revenue',
   widgets: {
@@ -397,6 +478,6 @@ const catalogue: AgPageState = {
 };
 // The report opens on its first page.
 export const dashboardReport: AgReportState = {
-  selectedPageId: revenue.id,
-  pages: [revenue, receivables, cash, catalogue],
+  selectedPageId: creditRoll.id,
+  pages: [creditRoll, revenue, receivables, cash, catalogue],
 };

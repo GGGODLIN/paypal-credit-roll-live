@@ -46,6 +46,14 @@ import { ReportsSidebar } from './components/sidebar';
 import { DashboardSkeleton } from './components/skeleton';
 import * as reportState from './report-state';
 import { buildAi } from './studio/ai';
+import {
+  createCreditRollStudioWidgets,
+  creditRollInteractiveStore,
+} from './studio/credit-roll-widget-state';
+import {
+  CreditRollStageWidget,
+  GhostPatchbayWidget,
+} from './studio/credit-roll-widgets';
 import { buildStudioData, hasData } from './studio/data';
 import { agStudioPayPalTheme } from './studio/theme';
 import { useReports } from './use-reports';
@@ -95,7 +103,29 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
   // its state is read from Studio.
   const [initialState] = useState(() => reportState.withFiltersPanelFor('view', saved.state));
   const state = studioState ?? initialState;
-  const studioData = useMemo(() => buildStudioData(data), [data]);
+  const interactiveCreditRoll = useSyncExternalStore(
+    creditRollInteractiveStore.subscribe,
+    creditRollInteractiveStore.getState,
+    creditRollInteractiveStore.getState,
+  );
+  const studioData = useMemo(
+    () =>
+      buildStudioData({
+        ...data,
+        crewMembers: interactiveCreditRoll.settlementState.reconciled.crewMembers,
+        creditCues: interactiveCreditRoll.settlementState.reconciled.creditCues,
+        crewSettlements: interactiveCreditRoll.settlementState.reconciled.crewSettlements,
+      }),
+    [data, interactiveCreditRoll.settlementState.reconciled],
+  );
+  const studioWidgets = useMemo(
+    () =>
+      createCreditRollStudioWidgets({
+        stageComp: CreditRollStageWidget,
+        patchbayComp: GhostPatchbayWidget,
+      }),
+    [],
+  );
   // `ai` is read once, when Studio is created.
   const ai = useMemo(() => (aiModels?.length ? buildAi(aiModels) : undefined), [aiModels]);
 
@@ -263,6 +293,7 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
               theme={agStudioPayPalTheme}
               layout={{ widgetBorderEnabled: true }}
               data={studioData}
+              widgets={studioWidgets}
               ai={ai}
               initialState={initialState}
               mode={mode}

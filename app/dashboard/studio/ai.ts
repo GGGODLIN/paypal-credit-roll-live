@@ -5,7 +5,17 @@ import { createAiHarness, type AgAiHarnessSetup, type AgAiPromptStarter } from '
 import { openaiAdapter } from './openai-adapter';
 
 // Suggestions shown in a new AI conversation, before anything has been typed.
-const PROMPT_STARTERS: AgAiPromptStarter[] = [
+export const PROMPT_STARTERS: AgAiPromptStarter[] = [
+  {
+    label: 'Audit Ghost-Cut crew obligations',
+    prompt:
+      'Which crew members were removed in Cut v2 (GHOST_CUT / UNPAID_GHOST) and still retain 100% of their fixed-fee contract obligation?',
+  },
+  {
+    label: 'Verify stage names & alias holds',
+    prompt:
+      'Show how credit-roll stage names and aliases map to legal contracts in crewSettlements, and explain why homonymous aliases are flagged NEEDS_REVIEW.',
+  },
   {
     label: 'Summarise this page',
     prompt: 'Summarise what this page shows: every widget, the fields it reads, and what stands out.',
