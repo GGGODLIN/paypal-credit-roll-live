@@ -14,6 +14,15 @@ import {
   type Product,
   type Transaction,
 } from './paypal';
+import {
+  buildSettlementProposal,
+  DEFAULT_CREDIT_ROLL_SCENARIO,
+  reconcileCreditRoll,
+  type CreditCueRow,
+  type CrewMemberRow,
+  type CrewSettlementRow,
+  type SettlementProposal,
+} from './credit-roll-reconciler';
 
 // Flat rows for the Dashboard's AG Studio data sources. Relationships between them:
 //   invoices.customerId        -> customers.id
@@ -277,7 +286,22 @@ function balanceRows({ balances = [] }: Balances) {
 
 const TRANSACTION_WINDOW_MS = TRANSACTION_SEARCH_MAX_DAYS * DAY_MS;
 
-export async function getDashboardData(asOf = new Date()) {
+async function fetchPayPalSnapshot(asOf: Date): Promise<{
+  products: Product[];
+  plans: Plan[];
+  invoices: Invoice[];
+  transactions: Transaction[];
+  balances: Balances;
+}> {
+  if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_SECRET) {
+    return {
+      products: [],
+      plans: [],
+      invoices: [],
+      transactions: [],
+      balances: { balances: [] },
+    };
+  }
   const [products, plans, invoices, transactions, balances] = await Promise.all([
     listProducts(),
     listPlans(),
@@ -285,7 +309,16 @@ export async function getDashboardData(asOf = new Date()) {
     searchTransactions(new Date(asOf.getTime() - TRANSACTION_WINDOW_MS), asOf),
     getBalances(),
   ]);
+  return { products, plans, invoices, transactions, balances };
+}
+
+export async function getDashboardData(asOf = new Date()) {
+  const [{ products, plans, invoices, transactions, balances }, reconciled] = await Promise.all([
+    fetchPayPalSnapshot(asOf),
+    Promise.resolve(reconcileCreditRoll(DEFAULT_CREDIT_ROLL_SCENARIO)),
+  ]);
   const today = asOf.toISOString().slice(0, 10);
+  const creditRollProposal = buildSettlementProposal(reconciled);
 
   return {
     asOf: asOf.toISOString(),
@@ -298,7 +331,21 @@ export async function getDashboardData(asOf = new Date()) {
     transactions: transactionRows(transactions),
     payouts: payoutRows(transactions),
     balances: balanceRows(balances),
+    crewMembers: reconciled.crewMembers as CrewMemberRow[],
+    creditCues: reconciled.creditCues as CreditCueRow[],
+    crewSettlements: reconciled.crewSettlements as CrewSettlementRow[],
+    creditRollProposal: creditRollProposal as SettlementProposal,
   };
 }
 
-export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
+export const loadDashboardData = getDashboardData;
+
+export type DashboardData = Omit<
+  Awaited<ReturnType<typeof getDashboardData>>,
+  'crewMembers' | 'creditCues' | 'crewSettlements' | 'creditRollProposal'
+> & {
+  crewMembers?: CrewMemberRow[];
+  creditCues?: CreditCueRow[];
+  crewSettlements?: CrewSettlementRow[];
+  creditRollProposal?: SettlementProposal;
+};

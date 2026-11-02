@@ -53,9 +53,16 @@ const ratio = (id: string, name: string, description: string, numerator: string,
 // --- Data sources -----------------------------------------------------------------
 
 
-// Whether the PayPal account has anything to report on. Without it, Studio would only show empty widgets.
+// Whether the PayPal account or CreditRoll Live dataset has anything to report on. Without it, Studio would only show empty widgets.
 export const hasData = (data: DashboardData) =>
-  [data.invoices, data.transactions, data.products, data.plans, data.balances].some((rows) => rows.length > 0);
+  [
+    data.invoices,
+    data.transactions,
+    data.products,
+    data.plans,
+    data.balances,
+    data.crewSettlements ?? [],
+  ].some((rows) => rows.length > 0);
 
 export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
   const dates = [
@@ -220,12 +227,89 @@ export function buildStudioData(data: DashboardData): AgDataSourcesDefinition {
           ['withheld', 'Withheld Balance', 'currencyFormat'],
         ]),
       },
+      {
+        id: 'crewMembers',
+        name: 'Crew Members',
+        description:
+          'Verified production crew contracts, stage names, roles, departments, and whitelisted PayPal Sandbox receiver emails, keyed by personId.',
+        data: data.crewMembers ?? [],
+        fields: fields([
+          ['id', 'Crew Row ID', 'textFormat', true],
+          ['personId', 'Person ID', 'textFormat'],
+          ['legalName', 'Legal Name', 'textFormat'],
+          ['stageName', 'Stage Name', 'textFormat'],
+          ['role', 'Role', 'textFormat'],
+          ['department', 'Department', 'textFormat'],
+          ['contractId', 'Contract ID', 'textFormat'],
+          ['contractStatus', 'Contract Status', 'textFormat'],
+          ['contractAmountCents', 'Contract Amount (Cents)', 'integerFormat', true],
+          ['contractAmountUsd', 'Contract Amount', 'currencyFormat'],
+          ['receiverEmail', 'PayPal Sandbox Email', 'textFormat'],
+          ['whitelistedSandboxReceiver', 'Whitelisted Receiver', 'booleanFormat'],
+        ]),
+      },
+      {
+        id: 'creditCues',
+        name: 'Credit Cues',
+        description:
+          'Film and game end-credits cue sheet entries across Rough Cut (v1) and Director Cut (v2), linked to crewMembers by personId.',
+        data: data.creditCues ?? [],
+        fields: fields([
+          ['id', 'Cue Row ID', 'textFormat', true],
+          ['cueId', 'Cue ID', 'textFormat'],
+          ['personId', 'Person ID', 'textFormat'],
+          ['creditedName', 'Credited Name', 'textFormat'],
+          ['role', 'Role', 'textFormat'],
+          ['department', 'Department', 'textFormat'],
+          ['appearsInCutV1', 'In Cut v1', 'booleanFormat'],
+          ['appearsInCutV2', 'In Cut v2', 'booleanFormat'],
+          ['sceneTimestamp', 'Scene Timestamp', 'textFormat'],
+          ['cueDescription', 'Cue Description', 'textFormat'],
+          ['reconciliationStatus', 'Reconciliation Status', 'textFormat'],
+          ['reviewReason', 'Review Reason', 'textFormat'],
+        ]),
+      },
+      {
+        id: 'crewSettlements',
+        name: 'Crew Settlements',
+        description:
+          'Deterministic crew settlement rows reconciling Cut v1 vs Cut v2 obligations (CREDITED, GHOST_CUT, ALIAS_AMBIGUOUS) and PayPal Sandbox read-back status, linked to crewMembers by personId.',
+        data: data.crewSettlements ?? [],
+        fields: fields([
+          ['id', 'Settlement Row ID', 'textFormat', true],
+          ['settlementId', 'Settlement ID', 'textFormat'],
+          ['personId', 'Person ID', 'textFormat'],
+          ['legalName', 'Legal Name', 'textFormat'],
+          ['stageName', 'Stage Name', 'textFormat'],
+          ['role', 'Role', 'textFormat'],
+          ['department', 'Department', 'textFormat'],
+          ['contractId', 'Contract ID', 'textFormat'],
+          ['contractAmountCents', 'Contract Cents', 'integerFormat', true],
+          ['contractAmountUsd', 'Contract Amount', 'currencyFormat'],
+          ['cutStatus', 'Cut Status', 'textFormat'],
+          ['reconciliationStatus', 'Reconciliation Status', 'textFormat'],
+          ['badgeStatus', 'Badge Status', 'textFormat'],
+          ['eligibleForPayout', 'Eligible for Payout', 'booleanFormat'],
+          ['obligationRetained', 'Obligation Retained', 'booleanFormat'],
+          ['discardedAiAmountOverride', 'AI Price Override Discarded', 'booleanFormat'],
+          ['receiverEmail', 'PayPal Sandbox Email', 'textFormat'],
+          ['paypalPayoutBatchId', 'PayPal Batch ID', 'textFormat'],
+          ['paypalPayoutItemId', 'PayPal Payout Item ID', 'textFormat'],
+          ['paypalOrderId', 'PayPal Order ID', 'textFormat'],
+          ['paypalInvoiceId', 'PayPal Invoice ID', 'textFormat'],
+          ['transactionStatus', 'Transaction Status', 'textFormat'],
+          ['evidenceSummary', 'Evidence Summary', 'textFormat'],
+          ['reviewReason', 'Review Reason', 'textFormat'],
+        ]),
+      },
     ],
     relationships: [
       manyToOne('invoice-customer', 'invoices.customerId', 'customers.id'),
       manyToOne('item-invoice', 'invoiceItems.invoiceId', 'invoices.id'),
       manyToOne('payment-invoice', 'invoicePayments.invoiceId', 'invoices.id'),
       manyToOne('plan-product', 'plans.productId', 'products.id'),
+      manyToOne('cue-crew-member', 'creditCues.personId', 'crewMembers.personId'),
+      manyToOne('settlement-crew-member', 'crewSettlements.personId', 'crewMembers.personId'),
       onCalendar('invoices', 'invoiceDate'),
       onCalendar('invoicePayments', 'date'),
       onCalendar('transactions', 'date', 'day'),
