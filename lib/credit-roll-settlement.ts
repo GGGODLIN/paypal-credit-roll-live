@@ -2,6 +2,7 @@ import {
   buildSettlementProposal,
   DEFAULT_CREDIT_ROLL_SCENARIO,
   reconcileCreditRoll,
+  sanitizeIdSegment,
   validateSettlementApproval,
   type CreditRollScenarioInput,
   type CrewSettlementRow,
@@ -153,7 +154,6 @@ export type CrewBatchSettlementRequestInput = {
   approvedBy?: string | null;
   expectedProposalVersionHash?: string | null;
   requestedPersonIds?: string[];
-  overrideAmountsCents?: Record<string, number>;
 };
 
 export type CrewBatchSettlementOperationResult = {
@@ -165,14 +165,6 @@ export type CrewBatchSettlementOperationResult = {
   error?: SettlementErrorDetail;
   state: CreditRollSettlementState;
 };
-
-const sanitizeIdSegment = (value: string): string =>
-  value
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toUpperCase();
 
 export function mapPayPalPayoutStatusToSettlement(
   rawStatus: PayPalPayoutTransactionStatus | string | undefined,

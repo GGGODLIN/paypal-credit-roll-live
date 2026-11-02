@@ -42,15 +42,9 @@ export type CreditRollStageNode = {
   cueDescription: string;
   contractId: string;
   contractAmountCents: number;
-  contractAmountUsd: number;
-  appearsInCutV1: boolean;
-  appearsInCutV2: boolean;
-  cutStatus: CrewSettlementRow['cutStatus'];
   badgeStatus: SettlementBadgeStatus;
-  transactionStatus: CrewSettlementRow['transactionStatus'];
   isTranslucentGhost: boolean;
   ghostCallout: string | null;
-  eligibleForPayout: boolean;
   reviewReason: string | null;
 };
 
@@ -135,15 +129,9 @@ export function buildStageNodes(
       cueDescription: cue.cueDescription,
       contractId: settlement?.contractId ?? 'UNBOUND-CONTRACT',
       contractAmountCents: settlement?.contractAmountCents ?? 0,
-      contractAmountUsd: settlement?.contractAmountUsd ?? 0,
-      appearsInCutV1: cue.appearsInCutV1,
-      appearsInCutV2: cue.appearsInCutV2,
-      cutStatus: settlement?.cutStatus ?? 'ALIAS_AMBIGUOUS',
       badgeStatus,
-      transactionStatus: settlement?.transactionStatus ?? 'NEEDS_REVIEW',
       isTranslucentGhost: isGhostInV2,
       ghostCallout: isGhostInV2 ? GHOST_CUT_V2_CALLOUT : null,
-      eligibleForPayout: settlement?.eligibleForPayout ?? false,
       reviewReason: settlement?.reviewReason ?? cue.reviewReason,
     };
   });

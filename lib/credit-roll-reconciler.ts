@@ -165,7 +165,6 @@ export type SettlementProposal = {
   cutVersion: CutVersion;
   revision: number;
   proposalVersionHash: string;
-  proposalVersionKey: string;
   senderBatchId: string;
   paypalRequestId: string;
   executableItems: ExecutablePayoutItem[];
@@ -173,7 +172,6 @@ export type SettlementProposal = {
   totalExecutableCents: number;
   totalExecutableUsd: number;
   ghostCutObligationCents: number;
-  creditedObligationCents: number;
   discardedAiOverrideCount: number;
 };
 
@@ -182,11 +180,6 @@ export type SettlementApprovalRequest = {
   approvedBy?: string | null;
   expectedProposalVersionHash?: string | null;
   requestedPersonIds?: string[];
-  overrideAmountsCents?: Record<string, number>;
-};
-
-export type SettlementApprovalInput = SettlementApprovalRequest & {
-  proposal: SettlementProposal;
 };
 
 export type SettlementApprovalValidation = {
@@ -214,7 +207,7 @@ const normaliseToken = (value: string): string =>
     .toLowerCase()
     .replace(/\s+/g, ' ');
 
-const sanitizeIdSegment = (value: string): string =>
+export const sanitizeIdSegment = (value: string): string =>
   value
     .trim()
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
@@ -807,7 +800,6 @@ export function buildSettlementProposal(
 
   let totalExecutableCents = 0;
   let ghostCutObligationCents = 0;
-  let creditedObligationCents = 0;
 
   const sortedSettlements = [...reconciled.crewSettlements].sort((a, b) =>
     a.personId.localeCompare(b.personId),
@@ -844,8 +836,6 @@ export function buildSettlementProposal(
       totalExecutableCents += row.contractAmountCents;
       if (itemCutStatus === 'GHOST_CUT') {
         ghostCutObligationCents += row.contractAmountCents;
-      } else {
-        creditedObligationCents += row.contractAmountCents;
       }
     } else {
       blockedItems.push(row);
@@ -870,7 +860,6 @@ export function buildSettlementProposal(
     cutVersion: reconciled.cutVersion,
     revision: reconciled.revision,
     proposalVersionHash,
-    proposalVersionKey: proposalVersionHash,
     senderBatchId,
     paypalRequestId,
     executableItems,
@@ -878,7 +867,6 @@ export function buildSettlementProposal(
     totalExecutableCents,
     totalExecutableUsd: centsToUsd(totalExecutableCents),
     ghostCutObligationCents,
-    creditedObligationCents,
     discardedAiOverrideCount: reconciled.discardedAiAmountOverrides.length,
   };
 }
@@ -891,13 +879,9 @@ export function createHumanApprovalToken(
 }
 
 export function validateSettlementApproval(
-  proposalOrInput: SettlementProposal | SettlementApprovalInput,
-  maybeRequest?: SettlementApprovalRequest,
+  proposal: SettlementProposal,
+  request: SettlementApprovalRequest = {},
 ): SettlementApprovalValidation {
-  const proposal = 'proposal' in proposalOrInput ? proposalOrInput.proposal : proposalOrInput;
-  const request: SettlementApprovalRequest =
-    'proposal' in proposalOrInput ? proposalOrInput : (maybeRequest ?? {});
-
   const errors: string[] = [];
   const token = (request.approvalToken ?? '').trim();
 
@@ -939,17 +923,6 @@ export function validateSettlementApproval(
     if (!executable) {
       errors.push('UNVERIFIED_RECIPIENT_BLOCKED');
       continue;
-    }
-    if (request.overrideAmountsCents && personId in request.overrideAmountsCents) {
-      const requestedCents = request.overrideAmountsCents[personId];
-      if (
-        typeof requestedCents !== 'number' ||
-        !Number.isSafeInteger(requestedCents) ||
-        requestedCents !== executable.amountCents
-      ) {
-        errors.push('CONTRACT_AMOUNT_MISMATCH');
-        continue;
-      }
     }
     approvedItems.push(executable);
   }

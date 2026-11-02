@@ -15,13 +15,11 @@ import {
   type Transaction,
 } from './paypal';
 import {
-  buildSettlementProposal,
   DEFAULT_CREDIT_ROLL_SCENARIO,
   reconcileCreditRoll,
   type CreditCueRow,
   type CrewMemberRow,
   type CrewSettlementRow,
-  type SettlementProposal,
 } from './credit-roll-reconciler';
 
 // Flat rows for the Dashboard's AG Studio data sources. Relationships between them:
@@ -313,12 +311,9 @@ async function fetchPayPalSnapshot(asOf: Date): Promise<{
 }
 
 export async function getDashboardData(asOf = new Date()) {
-  const [{ products, plans, invoices, transactions, balances }, reconciled] = await Promise.all([
-    fetchPayPalSnapshot(asOf),
-    Promise.resolve(reconcileCreditRoll(DEFAULT_CREDIT_ROLL_SCENARIO)),
-  ]);
+  const { products, plans, invoices, transactions, balances } = await fetchPayPalSnapshot(asOf);
+  const reconciled = reconcileCreditRoll(DEFAULT_CREDIT_ROLL_SCENARIO);
   const today = asOf.toISOString().slice(0, 10);
-  const creditRollProposal = buildSettlementProposal(reconciled);
 
   return {
     asOf: asOf.toISOString(),
@@ -331,21 +326,17 @@ export async function getDashboardData(asOf = new Date()) {
     transactions: transactionRows(transactions),
     payouts: payoutRows(transactions),
     balances: balanceRows(balances),
-    crewMembers: reconciled.crewMembers as CrewMemberRow[],
-    creditCues: reconciled.creditCues as CreditCueRow[],
-    crewSettlements: reconciled.crewSettlements as CrewSettlementRow[],
-    creditRollProposal: creditRollProposal as SettlementProposal,
+    crewMembers: reconciled.crewMembers,
+    creditCues: reconciled.creditCues,
+    crewSettlements: reconciled.crewSettlements,
   };
 }
 
-export const loadDashboardData = getDashboardData;
-
 export type DashboardData = Omit<
   Awaited<ReturnType<typeof getDashboardData>>,
-  'crewMembers' | 'creditCues' | 'crewSettlements' | 'creditRollProposal'
+  'crewMembers' | 'creditCues' | 'crewSettlements'
 > & {
   crewMembers?: CrewMemberRow[];
   creditCues?: CreditCueRow[];
   crewSettlements?: CrewSettlementRow[];
-  creditRollProposal?: SettlementProposal;
 };
