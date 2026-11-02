@@ -51,3 +51,5 @@
 - `Y3`: `pass` — `command grep` confirmed 0 remaining references to the 6 removed fields in `credit-roll-widget-state.ts`; Ticket 03 tests and `npm run build` passed.
 ### Summary
 - Run status: PASS
+- Architecture visual candidate gate (Step 8): `waived` (human decision `"1b, 2b"`, reason: `1-day hackathon project, proceed directly to demo video and submission`, `feature_base_sha`: `5de114eb4306e844396022f9ca0558a4937761e2`, `head_sha`: `cd42bce82e9cb89f5b102f8b04501ec3bc72ef7a`).
+
