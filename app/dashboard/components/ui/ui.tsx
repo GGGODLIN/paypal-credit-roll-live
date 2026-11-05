@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useEffectEvent, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-// PayPal-style building blocks for the dashboard shell: pill buttons, a modal dialog and a
-// small popover menu. Styling only; behaviour stays in the callers.
+// Building blocks for the cutting-room shell: hardware-style keys, a modal dialog and a small
+// popover menu. Styling only; behaviour stays in the callers.
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-pp-blue text-white hover:bg-pp-blue-dark disabled:bg-pp-border disabled:text-pp-muted',
-  secondary: 'border border-pp-navy text-pp-navy hover:bg-pp-highlight disabled:border-pp-border disabled:text-pp-muted',
-  ghost: 'text-pp-blue hover:bg-pp-highlight disabled:text-pp-muted',
-  danger: 'bg-pp-danger text-white hover:brightness-90',
+  primary:
+    'bg-cr-bone text-cr-void shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_2px_0_rgba(0,0,0,0.5)] hover:bg-white disabled:bg-cr-graphite disabled:text-cr-ash disabled:shadow-none',
+  secondary:
+    'border border-cr-hairline-strong bg-cr-graphite text-cr-bone hover:border-cr-smoke disabled:border-cr-hairline disabled:text-cr-ash',
+  ghost: 'text-cr-splice hover:bg-cr-splice/10 disabled:text-cr-ash',
+  danger: 'bg-cr-grease text-cr-void hover:brightness-110',
 };
 
 export function Button({
@@ -20,11 +22,11 @@ export function Button({
   className = '',
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md' }) {
-  const sizing = size === 'sm' ? 'h-8 px-4 text-sm' : 'h-10 px-5 text-[15px]';
+  const sizing = size === 'sm' ? 'h-8 px-3.5 text-[13px]' : 'h-10 px-5 text-[14px]';
   return (
     <button
       type="button"
-      className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pp-blue disabled:cursor-not-allowed ${sizing} ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-[4px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cr-splice disabled:cursor-not-allowed ${sizing} ${VARIANTS[variant]} ${className}`}
       {...props}
     />
   );
@@ -36,7 +38,7 @@ export function IconButton({ label, className = '', ...props }: ButtonHTMLAttrib
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full text-pp-navy transition-colors hover:bg-pp-highlight focus-visible:outline-2 focus-visible:outline-pp-blue disabled:cursor-not-allowed disabled:text-pp-border disabled:hover:bg-transparent ${className}`}
+      className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[4px] text-cr-bone transition-colors hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cr-splice disabled:cursor-not-allowed disabled:text-cr-ash disabled:hover:bg-transparent ${className}`}
       {...props}
     />
   );
@@ -56,24 +58,40 @@ export function Dialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  // Callers pass a new onClose each render; this keeps the backdrop listener from re-attaching.
+  const close = useEffectEvent(onClose);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    // A click whose target is the <dialog> itself landed on the backdrop. This is a pointer-only
+    // shortcut: keyboard users close with Esc, which the native dialog turns into its close event.
+    const onBackdropClick = (event: MouseEvent) => {
+      if (event.target === dialog) close();
+    };
+    dialog.addEventListener('click', onBackdropClick);
+    return () => dialog.removeEventListener('click', onBackdropClick);
+  }, []);
 
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       onClose={onClose}
-      onClick={(event) => event.target === ref.current && onClose()}
-      className="m-auto w-[min(440px,calc(100vw-32px))] rounded-lg bg-white p-0 font-paypal text-pp-ink shadow-xl backdrop:bg-pp-navy/40"
+      className="m-auto w-[min(440px,calc(100vw-32px))] rounded-[6px] border border-cr-hairline-strong bg-cr-carbon p-0 font-grotesk text-cr-bone shadow-[0_30px_80px_rgba(0,0,0,0.7)] backdrop:bg-black/70 backdrop:backdrop-blur-[2px]"
     >
       {open && (
         <div className="p-6">
-          <h2 className="text-xl font-semibold text-pp-navy">{title}</h2>
-          <div className="mt-3 text-[15px] text-pp-muted">{children}</div>
+          <h2 id={titleId} className="font-display text-[24px] leading-tight text-cr-bone">
+            {title}
+          </h2>
+          <div className="mt-3 text-[14px] leading-relaxed text-cr-smoke">{children}</div>
           <div className="mt-6 flex flex-wrap justify-end gap-3">{actions}</div>
         </div>
       )}
@@ -112,7 +130,7 @@ export function Menu({
     <div
       ref={ref}
       role="menu"
-      className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-md border border-pp-border bg-white py-1 shadow-lg"
+      className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-[4px] border border-cr-hairline-strong bg-cr-graphite py-1 shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
     >
       {children}
     </div>
@@ -124,7 +142,7 @@ export function MenuItem({ danger, ...props }: ButtonHTMLAttributes<HTMLButtonEl
     <button
       type="button"
       role="menuitem"
-      className={`block w-full px-4 py-2 text-left text-sm hover:bg-pp-highlight ${danger ? 'text-pp-danger' : 'text-pp-ink'}`}
+      className={`block w-full px-4 py-2 text-left text-[13px] hover:bg-white/5 ${danger ? 'text-cr-grease' : 'text-cr-bone'}`}
       {...props}
     />
   );

@@ -75,25 +75,24 @@ export function CreateReportDialog({
         </>
       }
     >
+      {/* showModal() moves focus to the first focusable control, which is the name field. */}
       <form
         id={formId}
-        onSubmit={(e) => {
-          e.preventDefault();
-          const name = String(new FormData(e.currentTarget).get('name') ?? '').trim();
+        action={(formData) => {
+          const name = String(formData.get('name') ?? '').trim();
           onCreate(name || 'Untitled report');
         }}
       >
         <p>Start from a blank page and build it with the widgets in Compose.</p>
-        <label className="mt-4 block text-sm font-semibold text-pp-navy" htmlFor="report-name">
+        <label className="cr-label mt-4 block text-[9.5px] text-cr-smoke" htmlFor="report-name">
           Report name
         </label>
         <input
           id="report-name"
           name="name"
-          autoFocus
           defaultValue="Untitled report"
           onFocus={(e) => e.currentTarget.select()}
-          className="mt-1 h-11 w-full rounded border border-pp-border px-3 text-[15px] text-pp-ink outline-none focus:border-pp-blue focus:ring-2 focus:ring-pp-highlight"
+          className="mt-1.5 h-11 w-full rounded-[4px] border border-cr-hairline-strong bg-cr-soot px-3 text-[15px] text-cr-bone outline-none focus:border-cr-splice focus:ring-2 focus:ring-cr-splice/20"
         />
       </form>
     </Dialog>

@@ -285,7 +285,8 @@ function ReportsDashboard({ data, licenseKey, aiModels }: DashboardProps) {
         }
       />
 
-      <div className="min-h-0 flex-1">
+      {/* Studio's canvas is transparent (studio/theme.ts) so this lamp-lit desk shows through. */}
+      <div className="min-h-0 flex-1 bg-cr-soot bg-[radial-gradient(70%_55%_at_38%_0%,rgba(242,180,64,0.07),transparent_70%),radial-gradient(60%_60%_at_100%_100%,rgba(108,217,209,0.035),transparent_70%)]">
         {hasData(data) ? (
           <AgStudioProvider licenseKey={licenseKey} modules={ai ? [AgStudioAiModule] : undefined}>
             <AgStudio

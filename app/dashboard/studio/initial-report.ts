@@ -17,11 +17,17 @@ const sum = (id: string) => ({ id, aggregation: 'sum' as const });
 const avg = (id: string) => ({ id, aggregation: 'avg' as const });
 const countd = (id: string) => ({ id, aggregation: 'countd' as const });
 
-// Same stack as --pp-font in app/globals.css.
+// Same stack as --pp-font in app/globals.css. Chart labels (the radial gauges) are drawn on
+// canvas, which cannot resolve CSS variables, so they keep plain family names.
 const PAYPAL_FONT = '"PayPal Open", "Helvetica Neue", Helvetica, Arial, sans-serif';
 
-const typography = (fontSize: number, fontWeight: 'normal' | 'bold' = 'normal') => ({
-  fontFamily: PAYPAL_FONT,
+// KPI tiles render as DOM, so they can use the next/font variables behind --font-grotesk and
+// --font-display in app/globals.css.
+const SANS_FONT = 'var(--font-archivo), "Helvetica Neue", Helvetica, Arial, sans-serif';
+const DISPLAY_FONT = 'var(--font-bodoni), "Bodoni 72", Didot, Georgia, serif';
+
+const typography = (fontSize: number, fontWeight: 'normal' | 'bold' = 'normal', fontFamily = PAYPAL_FONT) => ({
+  fontFamily,
   fontSize,
   fontWeight,
   fontStyle: 'normal' as const,
@@ -35,9 +41,9 @@ const kpi = (text: string, value: { id: string; aggregation?: 'sum' | 'avg' | 'c
     ...(sparklineX && { sparklineX: [{ id: sparklineX }] }),
   },
   format: {
-    title: { enabled: true, text, typography: typography(14, 'bold') },
-    caption: { enabled: true, text: '', typography: typography(0) },
-    style: { typography: typography(22) },
+    title: { enabled: true, text, typography: typography(13, 'bold', SANS_FONT) },
+    caption: { enabled: true, text: '', typography: typography(0, 'normal', SANS_FONT) },
+    style: { typography: typography(30, 'normal', DISPLAY_FONT) },
   },
 });
 
@@ -113,14 +119,16 @@ const creditRoll: AgPageState = {
       format: title('Crew Settlement & Cue Ledger (Cross-Filtered by Contributor)'),
     },
   },
+  // The two custom widgets get the height to show the whole Cut v2 roll and the Patchbay's
+  // action keys without scrolling; the KPI row gives up one track for it.
   widgetLayout: {
-    'kpi-crew-obligation': at(0, 0, 6, 7),
-    'kpi-verified-cues': at(6, 0, 6, 7),
-    'kpi-crew-count': at(12, 0, 6, 7),
-    'kpi-avg-contract': at(18, 0, 6, 7),
-    'credit-roll-stage': at(0, 7, 12, 22),
-    'ghost-patchbay': at(12, 7, 12, 22),
-    'crew-settlement-ledger': at(0, 29, 24, 20),
+    'kpi-crew-obligation': at(0, 0, 6, 6),
+    'kpi-verified-cues': at(6, 0, 6, 6),
+    'kpi-crew-count': at(12, 0, 6, 6),
+    'kpi-avg-contract': at(18, 0, 6, 6),
+    'credit-roll-stage': at(0, 6, 12, 27),
+    'ghost-patchbay': at(12, 6, 12, 27),
+    'crew-settlement-ledger': at(0, 33, 24, 20),
   },
 };
 
