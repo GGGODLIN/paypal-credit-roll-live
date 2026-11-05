@@ -496,13 +496,16 @@ export async function createAndSendObligationInvoiceWithQr(
     };
   }
 
+  // PayPal rejects an invoice_number it has issued before and caps its length (the live sandbox
+  // refused 32 characters and accepted 23). The in-memory invoice count restarts with the
+  // server, so the number also carries the issue time: a short person tag, base-36 milliseconds
+  // and the count keep every issued invoice unique at about 20 characters.
   const invoiceIndex = currentState.obligationInvoices.length + 1;
   const slug = sanitizeIdSegment(targetPersonId ?? currentState.reconciled.projectId);
-  const invoiceNumber =
-    input.invoiceNumber?.trim() ??
-    `CRLIVE-${slug}-R${currentState.reconciled.revision}-${String(invoiceIndex).padStart(3, '0')}`;
-  const requestId =
-    input.requestId?.trim() ?? `PPREQ-INV-${slug}-${amountCents}-${invoiceIndex}`;
+  const personTag = slug.replace(/^CREW-/, '').slice(0, 8).replace(/-+$/, '');
+  const issueStamp = `${Date.now().toString(36)}${invoiceIndex}`.toUpperCase();
+  const invoiceNumber = input.invoiceNumber?.trim() ?? `CR-${personTag}-${issueStamp}`;
+  const requestId = input.requestId?.trim() ?? `PPREQ-INV-${invoiceNumber}`;
   const recipientEmail = (
     input.recipientEmail ?? 'exec.producer.funding@creditroll.dev'
   ).trim();

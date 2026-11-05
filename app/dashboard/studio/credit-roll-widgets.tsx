@@ -721,10 +721,14 @@ function PatchKey({
 }
 
 function OrderStub({ receipt }: { receipt: SupporterOrderReceipt }) {
+  const captured = receipt.status === 'COMPLETED';
+  const approveUrl = !captured && receipt.approveUrl?.startsWith('https://') ? receipt.approveUrl : null;
   return (
     <div data-testid="receipt-supporter-order" className="cr-stub bg-[#fcfaf4]">
       <span className="flex items-center justify-between gap-2">
-        <span className="cr-label text-[7.5px] text-cr-ink-soft">Orders v2 · capture read-back</span>
+        <span className="cr-label text-[7.5px] text-cr-ink-soft">
+          {captured ? 'Orders v2 · capture read-back' : 'Orders v2 · awaiting supporter approval'}
+        </span>
         <span className="cr-stamp" data-status={receipt.status}>
           {receipt.status}
         </span>
@@ -735,6 +739,14 @@ function OrderStub({ receipt }: { receipt: SupporterOrderReceipt }) {
       </span>
       <span className="block truncate font-type text-[10px] text-cr-ink-soft">
         BTS Supporter Pack · {receipt.supporterName}
+        {approveUrl && (
+          <>
+            {' · '}
+            <a href={approveUrl} target="_blank" rel="noreferrer" className="text-cr-bond-navy underline">
+              approve in PayPal ↗
+            </a>
+          </>
+        )}
       </span>
     </div>
   );

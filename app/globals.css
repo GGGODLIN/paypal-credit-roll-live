@@ -284,7 +284,10 @@ body {
     color: var(--cr-paid);
   }
   .cr-stamp[data-status="PENDING"],
-  .cr-stamp[data-status="SENT"] {
+  .cr-stamp[data-status="SENT"],
+  .cr-stamp[data-status="CREATED"],
+  .cr-stamp[data-status="APPROVED"],
+  .cr-stamp[data-status="PAYER_ACTION_REQUIRED"] {
     color: var(--cr-pending);
   }
   .cr-stamp[data-status="UNCLAIMED"] {
@@ -309,7 +312,10 @@ body {
     color: var(--cr-paid-ink);
   }
   .cr-paper .cr-stamp[data-status="PENDING"],
-  .cr-paper .cr-stamp[data-status="SENT"] {
+  .cr-paper .cr-stamp[data-status="SENT"],
+  .cr-paper .cr-stamp[data-status="CREATED"],
+  .cr-paper .cr-stamp[data-status="APPROVED"],
+  .cr-paper .cr-stamp[data-status="PAYER_ACTION_REQUIRED"] {
     color: var(--cr-pending-ink);
   }
   .cr-paper .cr-stamp[data-status="UNCLAIMED"] {

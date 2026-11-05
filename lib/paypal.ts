@@ -448,12 +448,22 @@ export async function createAndCaptureOrder(
   }
 
   if (input.capture ?? true) {
-    await postJson<PayPalOrderResponse>(
-      `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
-      {},
-      `${input.requestId}-CAPTURE`,
-      options,
-    );
+    try {
+      await postJson<PayPalOrderResponse>(
+        `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
+        {},
+        `${input.requestId}-CAPTURE`,
+        options,
+      );
+    } catch (err) {
+      // A CAPTURE order has no funding until the payer approves it at its 'approve' link, and
+      // PayPal answers the capture with 422 ORDER_NOT_APPROVED until then (seen on the live
+      // sandbox). That order is pending, not failed: leave it uncaptured and let the read-back
+      // below report its real status and approve link. Any other refusal still fails the call.
+      if (!(err instanceof PayPalApiError && err.status === 422 && err.rawBody.includes('ORDER_NOT_APPROVED'))) {
+        throw err;
+      }
+    }
   }
 
   const readBackOrder = await get<PayPalOrderResponse>(

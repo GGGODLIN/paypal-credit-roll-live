@@ -772,3 +772,122 @@ test('AC 6: When PayPal returns a non-2xx error or timeout on a write endpoint, 
   );
   assert.deepEqual(store.getState().reconciled.crewSettlements, beforeSettlements);
 });
+
+test('Live sandbox: a CAPTURE order the supporter has not approved yet is recorded as pending with its approve link, while other capture failures still fail', async () => {
+  const approveHref = 'https://www.sandbox.paypal.com/checkoutnow?token=8H093206YF5676710';
+  const notApprovedBody = {
+    name: 'UNPROCESSABLE_ENTITY',
+    details: [{ issue: 'ORDER_NOT_APPROVED', description: 'Payer has not yet approved the Order for payment.' }],
+    debug_id: 'dbg_not_approved',
+  };
+
+  const run = async (captureFailure: { status: number; body: unknown }) => {
+    const calls: RecordedCall[] = [];
+    const mockFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      calls.push({ method, url, headers: normalizeHeaders(init), bodyText: typeof init?.body === 'string' ? init.body : '' });
+      if (method === 'POST' && url.endsWith('/v1/oauth2/token')) {
+        return jsonResponse(200, { access_token: 'tok_sandbox_pending', expires_in: 3600 });
+      }
+      if (method === 'POST' && url.endsWith('/v2/checkout/orders')) {
+        return jsonResponse(201, { id: '8H093206YF5676710', status: 'CREATED', links: [{ rel: 'approve', href: approveHref }] });
+      }
+      if (method === 'POST' && url.endsWith('/v2/checkout/orders/8H093206YF5676710/capture')) {
+        return jsonResponse(captureFailure.status, captureFailure.body);
+      }
+      if (method === 'GET' && url.endsWith('/v2/checkout/orders/8H093206YF5676710')) {
+        return jsonResponse(200, { id: '8H093206YF5676710', status: 'CREATED', links: [{ rel: 'approve', href: approveHref }] });
+      }
+      return jsonResponse(404, { message: `Unhandled URL ${method} ${url}` });
+    };
+    const store = createSettlementStore(DEFAULT_CREDIT_ROLL_SCENARIO);
+    const result = await createAndCaptureSupporterOrder(
+      { personId: 'crew-dj-owl', amountCents: 2500 },
+      { store, fetchImpl: mockFetch, clientId: 'sb_client_id', clientSecret: 'sb_client_secret' },
+    );
+    return { result, calls, store };
+  };
+
+  const pending = await run({ status: 422, body: notApprovedBody });
+  assert.equal(pending.result.ok, true, 'ORDER_NOT_APPROVED is a pending order, not a failed one');
+  assert.equal(pending.result.receipt?.orderId, '8H093206YF5676710');
+  assert.equal(pending.result.receipt?.status, 'CREATED');
+  assert.equal(pending.result.receipt?.approveUrl, approveHref);
+  assert.equal(pending.store.getState().supporterOrders.length, 1);
+  assert.equal(
+    pending.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/capture')).length,
+    1,
+    'capture is attempted exactly once',
+  );
+  assert.equal(
+    pending.calls.some((c) => c.method === 'GET' && c.url.endsWith('/v2/checkout/orders/8H093206YF5676710')),
+    true,
+    'the pending order is still read back with GET',
+  );
+
+  const refused = await run({
+    status: 422,
+    body: { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INSTRUMENT_DECLINED' }], debug_id: 'dbg_declined' },
+  });
+  assert.equal(refused.result.ok, false);
+  assert.equal(refused.result.statusCode, 422);
+  assert.equal(refused.result.error?.debugId, 'dbg_declined');
+  assert.equal(refused.store.getState().supporterOrders.length, 0);
+});
+
+test('Live sandbox: obligation invoice numbers stay within the length PayPal accepted and never repeat, even for long person ids or after the store restarts', async () => {
+  const sentNumbers: string[] = [];
+  const sentRequestIds: string[] = [];
+  const sampleQrBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  let invoiceSeq = 0;
+
+  const mockFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method === 'POST' && url.endsWith('/v1/oauth2/token')) {
+      return jsonResponse(200, { access_token: 'tok_sandbox_numbers', expires_in: 3600 });
+    }
+    if (method === 'POST' && url.endsWith('/v2/invoicing/invoices')) {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { detail?: { invoice_number?: string } };
+      sentNumbers.push(body.detail?.invoice_number ?? '');
+      sentRequestIds.push(normalizeHeaders(init)['paypal-request-id'] ?? '');
+      invoiceSeq += 1;
+      return jsonResponse(201, { id: `INV2-TEST-${invoiceSeq}`, status: 'DRAFT' });
+    }
+    if (method === 'POST' && /\/v2\/invoicing\/invoices\/INV2-TEST-\d+\/send$/.test(url)) {
+      return jsonResponse(202, {});
+    }
+    if (method === 'POST' && /\/generate-qr-code$/.test(url)) {
+      return jsonResponse(200, { qr_code: sampleQrBase64 });
+    }
+    const readBack = /\/v2\/invoicing\/invoices\/(INV2-TEST-\d+)$/.exec(url);
+    if (method === 'GET' && readBack) {
+      return jsonResponse(200, { id: readBack[1], status: 'SENT', detail: { currency_code: 'USD' } });
+    }
+    return jsonResponse(404, { message: `Unhandled URL ${method} ${url}` });
+  };
+  const options = (store: ReturnType<typeof createSettlementStore>) => ({
+    store,
+    fetchImpl: mockFetch,
+    clientId: 'sb_client_id',
+    clientSecret: 'sb_client_secret',
+  });
+
+  const firstStore = createSettlementStore(DEFAULT_CREDIT_ROLL_SCENARIO);
+  const nyx = await createAndSendObligationInvoiceWithQr({ personId: 'crew-elena-rostova' }, options(firstStore));
+  const moth = await createAndSendObligationInvoiceWithQr({ personId: 'crew-moth' }, options(firstStore));
+  const restartedStore = createSettlementStore(DEFAULT_CREDIT_ROLL_SCENARIO);
+  const mothAfterRestart = await createAndSendObligationInvoiceWithQr({ personId: 'crew-moth' }, options(restartedStore));
+
+  for (const result of [nyx, moth, mothAfterRestart]) {
+    assert.equal(result.ok, true, JSON.stringify(result.error));
+  }
+  assert.equal(sentNumbers.length, 3);
+  for (const invoiceNumber of sentNumbers) {
+    assert.ok(invoiceNumber.length > 0 && invoiceNumber.length <= 23, `invoice_number "${invoiceNumber}" exceeds 23 characters`);
+  }
+  assert.equal(new Set(sentNumbers).size, 3, 'every issued invoice gets its own number');
+  assert.equal(new Set(sentRequestIds).size, 3, 'every issued invoice gets its own PayPal-Request-Id');
+});
