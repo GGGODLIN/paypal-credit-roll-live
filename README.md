@@ -20,6 +20,16 @@ The Credit Roll Stage widget sits on a flatbed: a sprocket-lit strip, an SMPTE c
 
 ![AG Studio dashboard: the Credit Roll Stage in Director's Cut v2 with Moth and Nyx Frame as UNPAID_GHOST credits, cross-filtering the crew settlement grid to crew-moth](/docs/media/06-ag-studio-credit-roll-stage.png)
 
+### The read-back desk — live PayPal Sandbox, after all three Patchbay actions
+
+Captured from a live PayPal Sandbox run, not a mock. With the producer's approval switch armed, the Patchbay fired all three writes and read each one back with `GET`:
+
+- **Orders v2**: order `31S06570LA976733L` was created for the $25.00 supporter pack. PayPal holds it as `CREATED` until a supporter approves it, so the voucher carries PayPal's approve link instead of claiming a capture.
+- **Invoicing v2**: Moth's ghost-cut invoice `INV2-9GU9-DXP8-8H62-NW6W` came back `SENT` for $1,400.00 with a scannable QR code.
+- **Payouts v1**: batch `6GGPBS2JUKU5N` for $7,050.00 read back with all four items `PENDING`. Minutes later PayPal reported the batch `SUCCESS` and every item `UNCLAIMED`, because the demo crew addresses have no PayPal accounts, so no credit was ever stamped `PAID`.
+
+![Ghost Patchbay after live PayPal Sandbox calls: a CREATED supporter order with its approve link, a SENT obligation invoice with QR code, and a payout batch with four PENDING items](/docs/media/07-ghost-patchbay-and-receipts.png)
+
 ---
 
 ## Why CreditRoll Live?
@@ -50,7 +60,7 @@ Registered via AG Studio's `createWidgets` API with full `formatShape` and `ai` 
 
 ### 3. Two-Way PayPal Sandbox Write & Read-Back Loop (`lib/paypal.ts` & `lib/credit-roll-settlement.ts`)
 All PayPal calls run server-side with `PayPal-Request-Id` idempotency headers and automatic `GET` resource read-back:
-- **Behind-the-Scenes Supporter Pack (`Orders v2 CAPTURE`)**: `POST /v2/checkout/orders` (`intent: CAPTURE`) → `POST /v2/checkout/orders/{id}/capture` → `GET /v2/checkout/orders/{id}` (`/api/credit-roll/supporter-order`).
+- **Behind-the-Scenes Supporter Pack (`Orders v2 CAPTURE`)**: `POST /v2/checkout/orders` (`intent: CAPTURE`) → `POST /v2/checkout/orders/{id}/capture` → `GET /v2/checkout/orders/{id}` (`/api/credit-roll/supporter-order`). Until a supporter approves the order at PayPal's approve link, PayPal answers the capture with `ORDER_NOT_APPROVED`; the order is then recorded as pending (`CREATED`) with that link rather than failed.
 - **Ghost-Cut Obligation Invoice & Live QR Code (`Invoicing v2`)**: `POST /v2/invoicing/invoices` → `POST /v2/invoicing/invoices/{id}/send` → `POST /v2/invoicing/invoices/{id}/generate-qr-code` → `GET /v2/invoicing/invoices/{id}` (`/api/credit-roll/obligation-invoice`).
 - **Idempotent Crew Batch Payouts (`Batch Payouts v1`)**: `POST /v1/payments/payouts` → `GET /v1/payments/payouts/{batch_id}` (`/api/credit-roll/settle`), stamping a contributor node as `PAID` **only** when their individual item `transaction_status` is `SUCCESS` (while preserving `PENDING`, `UNCLAIMED`, and `FAILED` states).
 
@@ -77,7 +87,7 @@ AG_STUDIO=
 AG_STUDIO_OPENAI_API_KEY=
 ```
 
-### 2. Run the Automated Test Suite (17 TDD Acceptance Tests)
+### 2. Run the Automated Test Suite (19 Acceptance & Live-Sandbox Regression Tests)
 ```bash
 node --experimental-strip-types --test \
   tests/ticket-01-reconciler-and-studio-data.test.ts \
@@ -106,7 +116,7 @@ app/api/credit-roll/settle/               POST route for human-approved Batch Pa
 app/dashboard/studio/credit-roll-widgets.tsx        Interactive Credit Roll Stage & Ghost Patchbay Custom Widgets
 app/dashboard/studio/credit-roll-widget-state.ts    AG Studio Custom Widget definitions, cross-filter & action store
 app/dashboard/studio/data.ts              AG Studio relational schema (crewMembers, creditCues, crewSettlements)
-tests/                                    17 automated unit & integration acceptance tests (Tickets 01–03)
+tests/                                    19 automated tests: Tickets 01–03 acceptance plus two live-sandbox regressions
 ```
 
 ---
