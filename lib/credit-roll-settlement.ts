@@ -13,6 +13,7 @@ import {
   type SettlementTransactionStatus,
 } from './credit-roll-reconciler';
 import {
+  captureApprovedOrderAndReadBack,
   createAndCaptureOrder,
   createAndReadBackPayoutBatch,
   createSendAndReadBackInvoiceWithQr,
@@ -244,7 +245,8 @@ export function createSettlementStore(
       return found ? structuredClone(found) : undefined;
     },
     recordSupporterOrder(receipt: SupporterOrderReceipt) {
-      supporterOrders = [receipt, ...supporterOrders];
+      // A captured order replaces its pending record rather than appearing twice.
+      supporterOrders = [receipt, ...supporterOrders.filter((order) => order.orderId !== receipt.orderId)];
       if (receipt.personId) {
         reconciled = {
           ...reconciled,
@@ -431,6 +433,65 @@ export async function createAndCaptureSupporterOrder(
       createdAt: new Date().toISOString(),
     };
 
+    store.recordSupporterOrder(receipt);
+    return {
+      ok: true,
+      statusCode: 200,
+      receipt,
+      state: store.getState(),
+    };
+  } catch (err) {
+    const { statusCode, error } = toSettlementErrorResponse(err, secretForRedaction);
+    return {
+      ok: false,
+      statusCode,
+      error,
+      state: store.getState(),
+    };
+  }
+}
+
+export type SupporterOrderCaptureInput = {
+  orderId?: string | null;
+};
+
+// Only orders this session created can be captured here, so a stray or forged id never reaches
+// PayPal. Each attempt gets its own PayPal-Request-Id: an earlier attempt PayPal refused (payer
+// not approved yet) must not be replayed once the payer has approved.
+export async function captureApprovedSupporterOrder(
+  input: SupporterOrderCaptureInput = {},
+  options?: SettlementExecutionOptions,
+): Promise<SupporterOrderOperationResult> {
+  const { store, paypalOptions, secretForRedaction } = resolveOptions(options);
+  const currentState = store.getState();
+  const orderId = input.orderId?.trim() ?? '';
+  const pending = currentState.supporterOrders.find((order) => order.orderId === orderId);
+
+  if (!pending) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: {
+        code: 'UNKNOWN_SUPPORTER_ORDER',
+        message: `No supporter order "${orderId}" was created in this session, so it cannot be captured here.`,
+        paypalStatus: null,
+        debugId: null,
+      },
+      state: currentState,
+    };
+  }
+
+  try {
+    const readBack = await captureApprovedOrderAndReadBack(
+      pending.orderId,
+      `${pending.requestId}-CAPTURE-${Date.now().toString(36).toUpperCase()}`,
+      paypalOptions,
+    );
+    const receipt: SupporterOrderReceipt = {
+      ...pending,
+      status: readBack.status,
+      approveUrl: readBack.status === 'COMPLETED' ? null : pending.approveUrl,
+    };
     store.recordSupporterOrder(receipt);
     return {
       ok: true,

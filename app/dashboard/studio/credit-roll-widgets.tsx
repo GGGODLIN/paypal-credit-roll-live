@@ -597,6 +597,10 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
           invoice={state.latestInvoiceReceipt}
           batch={state.latestBatchReceipt}
           nameFor={nameFor}
+          locked={state.isActionLocked}
+          onCaptureOrder={() => {
+            void triggerSandboxAction('supporter-capture');
+          }}
         />
       </div>
 
@@ -634,11 +638,15 @@ function ReadBackVouchers({
   invoice,
   batch,
   nameFor,
+  locked,
+  onCaptureOrder,
 }: {
   order: SupporterOrderReceipt | null;
   invoice: ObligationInvoiceReceipt | null;
   batch: CrewBatchSettlementReceipt | null;
   nameFor: (personId: string) => string;
+  locked: boolean;
+  onCaptureOrder: () => void;
 }) {
   const empty = !order && !invoice && !batch;
   return (
@@ -654,7 +662,7 @@ function ReadBackVouchers({
         </p>
       ) : (
         <div className="mt-1.5 space-y-2">
-          {order && <OrderStub receipt={order} />}
+          {order && <OrderStub receipt={order} locked={locked} onCapture={onCaptureOrder} />}
           {invoice && <InvoiceStub receipt={invoice} />}
           {batch && <BatchStub receipt={batch} nameFor={nameFor} />}
         </div>
@@ -720,7 +728,15 @@ function PatchKey({
   );
 }
 
-function OrderStub({ receipt }: { receipt: SupporterOrderReceipt }) {
+function OrderStub({
+  receipt,
+  locked,
+  onCapture,
+}: {
+  receipt: SupporterOrderReceipt;
+  locked: boolean;
+  onCapture: () => void;
+}) {
   const captured = receipt.status === 'COMPLETED';
   const approveUrl = !captured && receipt.approveUrl?.startsWith('https://') ? receipt.approveUrl : null;
   return (
@@ -739,15 +755,31 @@ function OrderStub({ receipt }: { receipt: SupporterOrderReceipt }) {
       </span>
       <span className="block truncate font-type text-[10px] text-cr-ink-soft">
         BTS Supporter Pack · {receipt.supporterName}
-        {approveUrl && (
-          <>
-            {' · '}
-            <a href={approveUrl} target="_blank" rel="noreferrer" className="text-cr-bond-navy underline">
-              approve in PayPal ↗
-            </a>
-          </>
-        )}
       </span>
+      {!captured && (
+        <span className="mt-1.5 flex items-center justify-between gap-2 border-t border-dashed border-cr-ink/20 pt-1.5">
+          <span className="min-w-0 font-type text-[10px] leading-snug text-cr-ink-soft">
+            1 ·{' '}
+            {approveUrl ? (
+              <a href={approveUrl} target="_blank" rel="noreferrer" className="text-cr-bond-navy underline">
+                supporter approves in PayPal ↗
+              </a>
+            ) : (
+              'supporter approves in PayPal'
+            )}
+            <br />2 · capture the approved order here
+          </span>
+          <button
+            type="button"
+            data-testid="btn-capture-supporter-order"
+            disabled={locked}
+            onClick={onCapture}
+            className="cr-patch-key shrink-0 rounded-[3px] bg-cr-bond px-2.5 py-1.5 text-[10.5px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Capture approved order
+          </button>
+        </span>
+      )}
     </div>
   );
 }

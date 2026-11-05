@@ -401,3 +401,60 @@ test('AC 5: AG Studio AI prompt starters and assistant configuration allow users
   assert.ok(unapprovedResult.errorBanner, 'Expected errorBanner when human approval is not granted');
   assert.equal(unapprovedResult.errorBanner.code, 'MISSING_HUMAN_APPROVAL_TOKEN');
 });
+
+test('Live sandbox: the Patchbay capture key posts the pending order id and swaps in the COMPLETED read-back, and does nothing without a pending order', async () => {
+  const initial = createInitialCreditRollInteractiveState();
+
+  let calledWithoutOrder = false;
+  const noOrder = await runPatchbaySandboxAction(
+    { ...initial, latestOrderReceipt: null },
+    {
+      kind: 'supporter-capture',
+      fetchImpl: async () => {
+        calledWithoutOrder = true;
+        return new Response('{}', { status: 200 });
+      },
+    },
+  );
+  assert.equal(calledWithoutOrder, false, 'no pending order means no network call');
+  assert.equal(noOrder.errorBanner?.code, 'NO_PENDING_SUPPORTER_ORDER');
+
+  const pendingReceipt = {
+    orderId: '31S06570LA976733L',
+    status: 'CREATED' as const,
+    amountCents: 2500,
+    currencyCode: 'USD' as const,
+    supporterName: 'Executive Producer Backer',
+    supporterEmail: 'supporter.bts.sandbox@creditroll.dev',
+    personId: null,
+    approveUrl: 'https://www.sandbox.paypal.com/checkoutnow?token=31S06570LA976733L',
+    requestId: 'PPREQ-ORDER-1',
+    createdAt: '2026-11-05T00:00:00.000Z',
+  };
+  let postedUrl = '';
+  let postedBody = '';
+  const captured = await runPatchbaySandboxAction(
+    { ...initial, latestOrderReceipt: pendingReceipt },
+    {
+      kind: 'supporter-capture',
+      fetchImpl: async (input, init) => {
+        postedUrl = String(input);
+        postedBody = typeof init?.body === 'string' ? init.body : '';
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            statusCode: 200,
+            receipt: { ...pendingReceipt, status: 'COMPLETED', approveUrl: null },
+            state: initial.settlementState,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      },
+    },
+  );
+  assert.equal(postedUrl, '/api/credit-roll/supporter-order/capture');
+  assert.deepEqual(JSON.parse(postedBody), { orderId: '31S06570LA976733L' });
+  assert.equal(captured.latestOrderReceipt?.status, 'COMPLETED');
+  assert.equal(captured.isActionLocked, false);
+  assert.equal(captured.errorBanner, null);
+});

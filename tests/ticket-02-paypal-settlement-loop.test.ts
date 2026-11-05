@@ -48,6 +48,7 @@ const {
 
 const {
   createSettlementStore,
+  captureApprovedSupporterOrder,
   createAndCaptureSupporterOrder,
   createAndSendObligationInvoiceWithQr,
   executeCrewBatchPayoutAndReadBack,
@@ -890,4 +891,68 @@ test('Live sandbox: obligation invoice numbers stay within the length PayPal acc
   }
   assert.equal(new Set(sentNumbers).size, 3, 'every issued invoice gets its own number');
   assert.equal(new Set(sentRequestIds).size, 3, 'every issued invoice gets its own PayPal-Request-Id');
+});
+
+test('Live sandbox: once the supporter approves at PayPal, capturing the pending order reads it back COMPLETED and replaces the pending record; unknown or still-unapproved orders are refused', async () => {
+  const orderId = '31S06570LA976733L';
+  const approveHref = `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}`;
+  let payerApproved = false;
+  let captured = false;
+  const calls: RecordedCall[] = [];
+
+  const mockFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const method = (init?.method ?? 'GET').toUpperCase();
+    calls.push({ method, url, headers: normalizeHeaders(init), bodyText: typeof init?.body === 'string' ? init.body : '' });
+    if (method === 'POST' && url.endsWith('/v1/oauth2/token')) {
+      return jsonResponse(200, { access_token: 'tok_sandbox_capture', expires_in: 3600 });
+    }
+    if (method === 'POST' && url.endsWith('/v2/checkout/orders')) {
+      return jsonResponse(201, { id: orderId, status: 'CREATED', links: [{ rel: 'approve', href: approveHref }] });
+    }
+    if (method === 'POST' && url.endsWith(`/v2/checkout/orders/${orderId}/capture`)) {
+      if (!payerApproved) {
+        return jsonResponse(422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'ORDER_NOT_APPROVED' }], debug_id: 'dbg_not_yet' });
+      }
+      captured = true;
+      return jsonResponse(201, { id: orderId, status: 'COMPLETED' });
+    }
+    if (method === 'GET' && url.endsWith(`/v2/checkout/orders/${orderId}`)) {
+      return jsonResponse(200, {
+        id: orderId,
+        status: captured ? 'COMPLETED' : payerApproved ? 'APPROVED' : 'CREATED',
+        links: captured ? [] : [{ rel: 'approve', href: approveHref }],
+      });
+    }
+    return jsonResponse(404, { message: `Unhandled URL ${method} ${url}` });
+  };
+  const store = createSettlementStore(DEFAULT_CREDIT_ROLL_SCENARIO);
+  const options = { store, fetchImpl: mockFetch, clientId: 'sb_client_id', clientSecret: 'sb_client_secret' };
+
+  const pending = await createAndCaptureSupporterOrder({ personId: 'crew-dj-owl', amountCents: 2500 }, options);
+  assert.equal(pending.receipt?.status, 'CREATED');
+
+  const unknown = await captureApprovedSupporterOrder({ orderId: 'NOT-A-SESSION-ORDER' }, options);
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.statusCode, 404);
+  assert.equal(unknown.error?.code, 'UNKNOWN_SUPPORTER_ORDER');
+
+  const tooEarly = await captureApprovedSupporterOrder({ orderId }, options);
+  assert.equal(tooEarly.ok, false, 'capturing before the supporter approves is refused by PayPal and surfaced');
+  assert.equal(tooEarly.statusCode, 422);
+
+  payerApproved = true;
+  const done = await captureApprovedSupporterOrder({ orderId }, options);
+  assert.equal(done.ok, true, JSON.stringify(done.error));
+  assert.equal(done.receipt?.orderId, orderId);
+  assert.equal(done.receipt?.status, 'COMPLETED');
+  assert.equal(done.receipt?.approveUrl, null);
+  assert.equal(store.getState().supporterOrders.length, 1, 'the captured order replaces its pending record');
+  assert.equal(store.getState().supporterOrders[0]?.status, 'COMPLETED');
+
+  const captureRequestIds = calls
+    .filter((c) => c.method === 'POST' && c.url.endsWith('/capture'))
+    .map((c) => c.headers['paypal-request-id']);
+  assert.equal(captureRequestIds.length, 3);
+  assert.notEqual(captureRequestIds[2], captureRequestIds[0], 'the post-approval capture does not reuse the refused request id');
 });

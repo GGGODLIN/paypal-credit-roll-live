@@ -50,6 +50,7 @@ export type CreditRollStageNode = {
 
 export type PatchbayActionKind =
   | 'supporter-order'
+  | 'supporter-capture'
   | 'obligation-invoice'
   | 'batch-settlement';
 
@@ -210,6 +211,8 @@ export function dispatchContributorCrossFilter(
 const PROGRESS_LABELS: Record<PatchbayActionKind, string> = {
   'supporter-order':
     'Creating & capturing PayPal Sandbox Order + GET read-back...',
+  'supporter-capture':
+    'Capturing the supporter-approved PayPal Sandbox Order + GET read-back...',
   'obligation-invoice':
     'Creating, sending & generating QR for PayPal Invoice + GET read-back...',
   'batch-settlement':
@@ -237,6 +240,18 @@ export async function runPatchbaySandboxAction(
     };
   }
 
+  if (params.kind === 'supporter-capture' && !state.latestOrderReceipt) {
+    return {
+      ...state,
+      errorBanner: {
+        code: 'NO_PENDING_SUPPORTER_ORDER',
+        message:
+          'Create the BTS Supporter Pack order and have the supporter approve it at PayPal before capturing.',
+        debugId: null,
+      },
+    };
+  }
+
   const inFlightState: CreditRollInteractiveState = {
     ...state,
     humanApproved: effectiveApproved,
@@ -250,17 +265,25 @@ export async function runPatchbaySandboxAction(
   const fetchFn = params.fetchImpl ?? globalThis.fetch;
 
   try {
-    if (params.kind === 'supporter-order') {
-      const targetPersonId =
-        params.personId ?? state.selectedPersonId ?? 'crew-dj-owl';
-      const response = await fetchFn('/api/credit-roll/supporter-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          personId: targetPersonId,
-          amountCents: params.amountCents ?? 2500,
-        }),
-      });
+    if (params.kind === 'supporter-order' || params.kind === 'supporter-capture') {
+      const capturing = params.kind === 'supporter-capture';
+      const response = await fetchFn(
+        capturing
+          ? '/api/credit-roll/supporter-order/capture'
+          : '/api/credit-roll/supporter-order',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            capturing
+              ? { orderId: state.latestOrderReceipt?.orderId }
+              : {
+                  personId: params.personId ?? state.selectedPersonId ?? 'crew-dj-owl',
+                  amountCents: params.amountCents ?? 2500,
+                },
+          ),
+        },
+      );
       const payload =
         (await response.json()) as SupporterOrderOperationResult;
       const nextSettlementState = payload.state ?? state.settlementState;
@@ -273,10 +296,14 @@ export async function runPatchbaySandboxAction(
           isActionLocked: false,
           progressText: null,
           errorBanner: {
-            code: payload.error?.code ?? 'PAYPAL_ORDER_FAILED',
+            code:
+              payload.error?.code ??
+              (capturing ? 'PAYPAL_ORDER_CAPTURE_FAILED' : 'PAYPAL_ORDER_FAILED'),
             message:
               payload.error?.message ??
-              'Failed to create and capture Supporter Pack order.',
+              (capturing
+                ? 'Failed to capture the approved Supporter Pack order.'
+                : 'Failed to create and capture Supporter Pack order.'),
             debugId: payload.error?.debugId ?? null,
           },
         };

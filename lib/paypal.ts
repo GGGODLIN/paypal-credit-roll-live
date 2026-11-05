@@ -477,6 +477,25 @@ export async function createAndCaptureOrder(
   };
 }
 
+// The second half of PayPal Checkout: after the payer approves at the order's 'approve' link,
+// capture it and read it back. A repeat capture of an order that already went through answers
+// 422 ORDER_ALREADY_CAPTURED; the read-back then reports COMPLETED, which is the truth.
+export async function captureApprovedOrderAndReadBack(
+  orderId: string,
+  requestId: string,
+  options?: PayPalCallOptions,
+): Promise<PayPalOrderResponse> {
+  const orderPath = `/v2/checkout/orders/${encodeURIComponent(orderId)}`;
+  try {
+    await postJson<PayPalOrderResponse>(`${orderPath}/capture`, {}, requestId, options);
+  } catch (err) {
+    if (!(err instanceof PayPalApiError && err.status === 422 && err.rawBody.includes('ORDER_ALREADY_CAPTURED'))) {
+      throw err;
+    }
+  }
+  return get<PayPalOrderResponse>(orderPath, options);
+}
+
 export type CreateObligationInvoiceInput = {
   invoiceNumber: string;
   recipientEmail: string;
