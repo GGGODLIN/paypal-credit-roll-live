@@ -6,6 +6,22 @@
 
 ---
 
+## Visual Gallery
+
+### The screening room — `/`
+
+The home page reads the Director's Cut end roll as a ledger. Every credit carries its locked contract fee, the two names cut from v2 burn through the 35mm gate as `UNPAID_GHOST` double exposures, and the figures — $7,050.00 executable, $3,600.00 ghost-cut retained, one alias on hold — are computed by the same reconciler that drives AG Studio.
+
+![CreditRoll Live home page: the end roll running through a 35mm film gate beside the headline "The credits roll. The ledger doesn't."](/docs/media/05-screening-room-home.png)
+
+### The cutting room — `/dashboard`, Director's Cut v2 cross-filtered to Moth
+
+The Credit Roll Stage widget sits on a flatbed: a sprocket-lit strip, an SMPTE cue ruler, and cyan workprint (Cut v1) and amber splice-tape (Cut v2) keys. Clicking Moth's ghost credit cross-filters the AG Grid ledger, the KPI tiles and the Filters panel to `crew-moth`, while the Ghost Patchbay beside it holds the integer-cent settlement voucher behind the producer's approval switch.
+
+![AG Studio dashboard: the Credit Roll Stage in Director's Cut v2 with Moth and Nyx Frame as UNPAID_GHOST credits, cross-filtering the crew settlement grid to crew-moth](/docs/media/06-ag-studio-credit-roll-stage.png)
+
+---
+
 ## Why CreditRoll Live?
 
 Independent film, animation, podcast, and indie game productions treat their end-credits roll as a static thank-you screen while managing contributor contracts, stage-name mapping, cut-edit changes, fan support, and PayPal payouts in disconnected spreadsheets:
