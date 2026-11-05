@@ -307,3 +307,102 @@
 ### 本段尾註
 
 「範圍解讀」一類扎堆 5 條（U5、U6、U7、U10、U11）：派工 brief 對「哪些畫面在重製範圍內」與「截圖 07 的資料來源」有霧。建議下一次派 UI 工作時，在 brief 先列清楚要重製的路由清單、可否動 `initial-report.ts` 版面，以及沒有 Sandbox 憑證時截圖要怎麼處理。
+
+U11 後續：使用者先選「靠我自己完成就用真實 Sandbox」，登入後要我自己處理權限，最後選了方案 1（修金流缺陷並補撥款環境）。真實 Sandbox 截圖 07 已在 commit `2a9e494` 拍成，所以 U11 的暫定做法已撤回，相關決定見 Pass 3。
+
+---
+
+## Pass 3 — 真實 Sandbox 實跑與金流修正（commit `42c7adf`、`71c1c2b`、`2a9e494`）
+
+起因：截圖 07 第一次對真實 PayPal Sandbox 實跑，揪出 mock 測試抓不到的兩個金流缺陷。使用者選方案 1，同意修金流程式並建立新的 Sandbox 帳戶與 API 金鑰。
+
+### 八類掃描總覽
+
+1. **資料形狀與格式**：有（P1 發票編號格式、P2 未付款訂單的收據狀態）
+2. **存放位置與命名**：無；新測試沿用 `tests/ticket-02-paypal-settlement-loop.test.ts`，標題以「Live sandbox:」開頭，合併計數 1 處
+3. **API 契約與錯誤行為**：有（P2 `ORDER_NOT_APPROVED` 改視為待付款、P3 錯誤橫幅拆解 PayPal 錯誤）
+4. **新增的相依套件，連同它帶進來的預設行為與上限**：無（`package.json` 零變動）
+5. **並行與效能取捨：快取、容量上限、逾時、重試**：有（P4 發票的 PayPal-Request-Id 不再跨重啟固定）
+6. **範圍解讀：套用範圍比規格寬或窄**：有（P5 修改金流邏輯超出原 UI 範圍、P6 Sandbox 環境設定）
+7. **測試設定改動：timeout、skip、mock、放寬斷言**：無（既有 17 條測試一字未改；新增 2 條回歸測試，沿用檔內既有的 mock fetch 寫法）
+8. **之後的程式會照抄的模式**：有（P1 時間戳加張數的唯一編號、P3 用樣式比對讀 PayPal 錯誤）
+
+---
+
+### 逐條決定明細
+
+#### P1 — 發票編號改成 `CR-<人名標記>-<base36 毫秒><張數>`，長度落在 17–22 字元
+- **何時**：commit `71c1c2b`（`lib/credit-roll-settlement.ts:505-508`）
+- **決定**：
+  - **標題**：取代原本的 `CRLIVE-<personId>-R<revision>-<三位數張數>`。
+  - **觸發事件**：真實 Sandbox 實跑時，Nyx Frame 的編號 `CRLIVE-CREW-ELENA-ROSTOVA-R1-001`（32 字元）被 PayPal 以 `INVALID_STRING_MAX_LENGTH` 拒絕；伺服器重啟後，Moth 的 `CRLIVE-CREW-MOTH-R1-001` 又因 `DUPLICATE_INVOICE_NUMBER` 被拒（證據 `/Users/linhancheng/Desktop/projects/paypal-credit-roll-live/.scratch/credit-roll-live/dispatch-opus-ui/receipts/live-run2-nyx.json`、`live-run3-moth-after-restart.json`）。
+  - **現在怎麼做**：取 personId 去掉 `CREW-` 後的前 8 碼當人名標記，再接 base36 毫秒與記憶體裡的張數。實跑的 `CR-MOTH-MW3O2B7O1` 是 17 字元，已被 PayPal 接受；最長的情況（人名標記滿 8 碼、張數兩位數）是 22 字元，仍短於第 1 輪實測被接受的 23 字元。
+  - **沒選的做法會怎樣**：只截短不加時間戳，伺服器一重啟又會撞號；改成資料庫流水號，這個 demo 沒有資料庫。
+- **規格缺口**：spec 只說要產生發票，沒規定編號格式、長度與唯一性。
+- **影響範圍**：PayPal 發票上顯示的編號、Patchbay 發票收據，以及之後任何依編號對帳的工作。
+- **判定**：`sound` — 實測證明舊格式在 4 位可開發票的成員中有 2 位一定失敗（Nyx Frame、Hana Sato），重啟後全員都會撞號；新格式最長 22 字元，短於實測可接受的 23 字元，且每次都不同。
+- **把握度**：中
+
+#### P2 — capture 回 `ORDER_NOT_APPROVED` 時，把訂單記成「等待支持者付款」，不再整筆判失敗
+- **何時**：commit `71c1c2b`（`lib/paypal.ts:460-463`、`app/dashboard/studio/credit-roll-widgets.tsx:725`）
+- **決定**：
+  - **標題**：訂單照樣讀回並記錄，狀態是 PayPal 回的 `CREATED`，收據附 PayPal 的付款連結；其他 capture 錯誤照舊失敗。
+  - **觸發事件**：真實 Sandbox 每次都回 422 `ORDER_NOT_APPROVED`。`intent: CAPTURE` 的訂單要付款人先同意才能 capture，現有流程是建立後立刻 capture。
+  - **現在怎麼做**：只有「422＋`ORDER_NOT_APPROVED`」這個組合放行，其餘錯誤照常往外拋；Patchbay 收據標題改成「awaiting supporter approval」，只接受 `https://` 開頭的付款連結。
+  - **沒選的做法會怎樣**：維持原樣，評審實跑一定看到錯誤橫幅。改用 `payment_source.card` 帶測試卡直接 capture，需要商家帳戶支援進階卡片付款（美國帳戶頁面顯示已啟用、台灣帳戶不支援），而且要改金流請求與測試，範圍更大。
+- **規格缺口**：spec 寫「For instant Behind-the-Scenes Supporter Pack funding and autonomous Sandbox verification」，沒處理付款人同意這一步。
+- **影響範圍**：BTS 訂單的成功判定、Patchbay 訂單收據、README 的功能說明。
+- **判定**：`needs-user` — spec 想要的是「立即入帳」，現在交付的是「誠實的待付款」。暫定做法：維持待付款＋付款連結。撤回方式：改成在美國商家 app 上用 `payment_source.card` 帶 Sandbox 測試卡直接 capture，並補測試。
+- **把握度**：低
+
+#### P3 — 錯誤橫幅改用樣式比對拆解 PayPal 錯誤，並把橫幅與收據區拆成獨立元件
+- **何時**：commit `42c7adf`（`app/dashboard/studio/credit-roll-widgets.tsx:42`、`:611`、`:632`）
+- **決定**：
+  - **標題**：從 `PayPal 4xx on <path>: {json}` 挑出 issue／name、說明、狀態碼與路徑分行顯示，允許任意斷行。
+  - **觸發事件**：真實錯誤裡沒有斷行點的網址撐破橫幅；伺服器又會把 PayPal 回應截在 300 字元，`JSON.parse` 會失敗。
+  - **現在怎麼做**：用正則抽欄位，被截斷的說明補「…」；非 PayPal 的錯誤照原文顯示。另外把 `HaltNotice`、`ReadBackVouchers` 拆出主元件，讓 react-doctor 的複雜度警告消失（分數從 92 回到 100）。
+  - **沒選的做法會怎樣**：只加斷行不拆欄位，橫幅會是一整段 JSON；改伺服器端回結構化錯誤，要動 API 契約。
+- **規格缺口**：spec 只要求「actionable error banners」，沒規定錯誤怎麼呈現。
+- **影響範圍**：所有 PayPal 寫入失敗時的 Patchbay 顯示。
+- **判定**：`sound` — 三種真實錯誤（訂單、發票、撥款）都實測解析正確。
+- **把握度**：高
+
+#### P4 — 發票的 PayPal-Request-Id 改成跟著發票編號走，每次點擊都不同
+- **何時**：commit `71c1c2b`（`lib/credit-roll-settlement.ts:508`）
+- **決定**：
+  - **標題**：`PPREQ-INV-<發票編號>` 取代 `PPREQ-INV-<slug>-<金額>-<張數>`。
+  - **觸發事件**：第 3 輪實跑用了和第 1 輪相同的 Request-Id，PayPal 沒有回傳原本那張發票，而是回 `DUPLICATE_INVOICE_NUMBER`，代表靠固定 Request-Id 去重這條路在發票上不成立。
+  - **現在怎麼做**：每張發票有自己的 Request-Id；防重複點擊仍靠 Patchbay 執行中鎖鍵（`isActionLocked`）。
+  - **沒選的做法會怎樣**：保留固定 Request-Id，發票編號換了之後兩者會對不上，而且 PayPal 本來就沒照它回放。
+- **規格缺口**：spec 的冪等設計是寫給撥款批次的，沒說發票要不要跨重啟去重。
+- **影響範圍**：發票寫入的重試語意；撥款批次的冪等鍵不變。
+- **判定**：`sound` — 實測顯示原設計在發票上沒有作用，新設計至少保證每張發票編號與 Request-Id 一致且唯一。
+- **把握度**：中
+
+#### P5 — 修改金流邏輯，超出原本 UI 重製的範圍
+- **何時**：commit `71c1c2b`（`lib/paypal.ts`、`lib/credit-roll-settlement.ts`、`tests/ticket-02-paypal-settlement-loop.test.ts:776`、`:839`）
+- **決定**：
+  - **標題**：在 UI 派工裡修了兩個金流缺陷，並補 2 條回歸測試（17 → 19 條）。
+  - **觸發事件**：前 3 輪真實 Sandbox 實跑中，BTS 訂單每次都回 422 `ORDER_NOT_APPROVED`，發票在換人時回 400 `INVALID_STRING_MAX_LENGTH`、重啟後回 422 `DUPLICATE_INVOICE_NUMBER`，代表評審實跑也一定會撞到。把兩個缺陷與修法擺上桌後，使用者選了方案 1（「修缺陷並補撥款環境，再重拍」）。
+  - **現在怎麼做**：測試先寫、先看紅燈（兩條都因正確原因失敗）再修到綠燈；既有 17 條測試一字未改。
+  - **沒選的做法會怎樣**：只拍截圖不修，評審實跑會遇到同樣的失敗。
+- **規格缺口**：派工 brief 只涵蓋 UI 與截圖。
+- **影響範圍**：BTS 訂單與幽靈發票的實際行為。
+- **判定**：`sound` — 有使用者明確授權，並有紅綠燈測試與真實 Sandbox 實跑兩種證據。
+- **把握度**：高
+
+#### P6 — Sandbox 環境設定：開權限、建美國商家帳戶與新 app、更換 `.env.local`
+- **何時**：session 實測（截圖收據 `/Users/linhancheng/Desktop/projects/paypal-credit-roll-live/.scratch/credit-roll-live/dispatch-opus-ui/receipts/paypal-app-features-before.jpg`、`live-run4-us-all-three.json`）
+- **決定**：
+  - **標題**：Default Application 開 Transaction search；新建美國商家測試帳戶 `creditroll-us-6aec97b1@business.example.com`（餘額 USD 20,000）與綁定它的「CreditRoll Live US」app，開 Invoicing 與 Transaction search；`.env.local` 改用新 app 的憑證。
+  - **觸發事件**：Dashboard 缺報表權限回 403；台灣商家帳戶只有 USD 5,000，不夠付 $7,050。
+  - **現在怎麼做**：憑證經剪貼簿直接寫檔，Secret 不進對話；作廢 PayPal 快取的舊 token，讓新權限生效。
+  - **沒選的做法會怎樣**：改 Dashboard 程式容錯會掩蓋權限問題；從台灣個人帳戶轉帳給台灣商家帳戶，可能受台灣境內互轉限制（未驗證）。
+- **規格缺口**：brief 假設 Sandbox 環境已經可以實跑。
+- **影響範圍**：使用者的 Sandbox 多了 1 個帳戶、1 個 app、數張測試訂單、發票與 1 個撥款批次；兩個 app 都多了 Transaction search 權限。
+- **判定**：`sound` — 使用者先說「你自己處理」，再明確選方案 1 同意建立新金鑰；全部只影響 Sandbox，可在後台刪除或取消勾選還原。
+- **把握度**：高
+
+### 本段尾註
+
+P1、P2、P4 都源自同一件事：Ticket 02 的 Sandbox 實測當初卡在缺憑證，`mock fetch` 測試只驗證了「呼叫順序正確」，沒驗證「PayPal 真的會接受」。建議之後每加一個 PayPal 寫入，至少對真實 Sandbox 跑一次。
