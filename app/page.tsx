@@ -52,7 +52,7 @@ export default function Home() {
 function SiteHeader() {
   return (
     <header className="relative z-20 border-b border-white/[0.06] bg-cr-void/80 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-[1360px] items-center justify-between px-10">
+      <div className="mx-auto flex h-16 max-w-[1360px] items-center justify-between px-5 lg:px-10">
         <Link href="/" className="cr-focus rounded-sm" aria-label="CreditRoll Live home">
           <CreditRollWordmark />
         </Link>
@@ -61,7 +61,7 @@ function SiteHeader() {
             <a
               key={section.href}
               href={section.href}
-              className="cr-label cr-focus rounded-sm text-[9.5px] text-cr-smoke transition-colors hover:text-cr-bone"
+              className="cr-label cr-focus hidden rounded-sm text-[9.5px] text-cr-smoke transition-colors hover:text-cr-bone lg:inline"
             >
               {section.label}
             </a>
@@ -89,14 +89,14 @@ function Hero({ dossier }: { dossier: Dossier }) {
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_8%_100%,rgba(108,217,209,0.06),transparent_70%)]"
       />
-      <div className="mx-auto grid w-full max-w-[1360px] flex-1 grid-cols-12 items-center gap-x-12 px-10 py-10">
-        <div className="col-span-7">
+      <div className="mx-auto grid w-full max-w-[1360px] flex-1 grid-cols-1 items-center gap-x-12 gap-y-14 px-5 py-10 lg:grid-cols-12 lg:gap-y-0 lg:px-10">
+        <div className="lg:col-span-7">
           <p className="cr-label cr-reveal text-[10px] text-cr-splice">
             PayPal AI Hackathon 2026 · AG Studio 3.0 · PayPal Sandbox
           </p>
           <h1
             id="hero-title"
-            className="cr-reveal mt-6 font-display text-[clamp(60px,6.1vw,88px)] font-normal leading-[0.94] tracking-[-0.015em] [--cr-delay:90ms]"
+            className="cr-reveal mt-6 font-display text-[clamp(38px,6.1vw,88px)] font-normal leading-[0.94] tracking-[-0.015em] [--cr-delay:90ms]"
           >
             The credits roll.
             <br />
@@ -130,7 +130,7 @@ function Hero({ dossier }: { dossier: Dossier }) {
               Read the cue sheet <span aria-hidden>↓</span>
             </a>
           </div>
-          <dl className="cr-reveal mt-12 grid max-w-[40rem] grid-cols-3 divide-x divide-white/[0.08] border-y border-white/[0.08] [--cr-delay:340ms]">
+          <dl className="cr-reveal mt-12 grid max-w-[40rem] grid-cols-1 divide-y divide-white/[0.08] border-y border-white/[0.08] [--cr-delay:340ms] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <HeroFigure
               value={formatUsdCents(dossier.executableCents)}
               label="Executable"
@@ -151,7 +151,7 @@ function Hero({ dossier }: { dossier: Dossier }) {
             />
           </dl>
         </div>
-        <div className="col-span-5">
+        <div className="lg:col-span-5">
           <FilmGate dossier={dossier} />
         </div>
       </div>
@@ -162,7 +162,7 @@ function Hero({ dossier }: { dossier: Dossier }) {
 
 function HeroFigure({ value, label, note, tone }: { value: string; label: string; note: string; tone: string }) {
   return (
-    <div className="px-5 py-4 first:pl-0">
+    <div className="py-4 sm:px-5 sm:first:pl-0">
       <dt className="cr-label text-[8.5px] text-cr-ash">{label}</dt>
       <dd className={`cr-numerals mt-1.5 font-display text-[30px] leading-none ${tone}`}>{value}</dd>
       <dd className="mt-2 text-[12px] leading-snug text-cr-smoke">{note}</dd>
@@ -304,10 +304,10 @@ function SectionHeading({
   lede: string;
 }) {
   return (
-    <header className="grid grid-cols-12 gap-x-12">
-      <p className="cr-label col-span-3 pt-3 text-[9.5px] text-cr-splice">{gallery}</p>
-      <div className="col-span-9">
-        <h2 id={id} className="font-display text-[52px] font-normal leading-[1.02] tracking-[-0.01em]">
+    <header className="grid grid-cols-1 gap-x-12 gap-y-4 lg:grid-cols-12 lg:gap-y-0">
+      <p className="cr-label pt-3 text-[9.5px] text-cr-splice lg:col-span-3">{gallery}</p>
+      <div className="lg:col-span-9">
+        <h2 id={id} className="font-display text-[36px] font-normal leading-[1.02] tracking-[-0.01em] md:text-[52px]">
           {title}
         </h2>
         <p className="mt-5 max-w-[46rem] text-[16px] leading-relaxed text-cr-smoke">{lede}</p>
@@ -320,7 +320,7 @@ function Exhibits({ dossier }: { dossier: Dossier }) {
   const ghostRows = dossier.rows.filter((row) => row.verdict === 'GHOST_CUT');
   const heldRows = dossier.rows.filter((row) => row.verdict === 'NEEDS_REVIEW');
   return (
-    <section id="exhibits" aria-labelledby="exhibits-title" className="mx-auto max-w-[1360px] scroll-mt-16 px-10 py-28">
+    <section id="exhibits" aria-labelledby="exhibits-title" className="mx-auto max-w-[1360px] scroll-mt-16 px-5 py-28 lg:px-10">
       <SectionHeading
         id="exhibits-title"
         gallery="Gallery 1 — The problem"
@@ -332,7 +332,7 @@ function Exhibits({ dossier }: { dossier: Dossier }) {
         }
         lede="Independent productions run credits, contracts, cut changes and payouts in separate spreadsheets. These are the gaps CreditRoll Live closes, shown with the Neon Nocturne records the app ships with."
       />
-      <div className="mt-16 grid grid-cols-3 gap-px overflow-hidden rounded-[6px] border border-white/[0.08] bg-white/[0.08]">
+      <div className="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-[6px] border border-white/[0.08] bg-white/[0.08] lg:grid-cols-3">
         <Placard
           accession="Exhibit A · CUE-02, CUE-03"
           title="The ghost-credit cut"
@@ -479,18 +479,18 @@ function ReadBackArtifact() {
 function CueSheet({ dossier }: { dossier: Dossier }) {
   return (
     <section id="cue-sheet" aria-labelledby="cue-sheet-title" className="scroll-mt-16 bg-[#0c0b09] py-28">
-      <div className="mx-auto max-w-[1360px] px-10">
+      <div className="mx-auto max-w-[1360px] px-5 lg:px-10">
         <SectionHeading
           id="cue-sheet-title"
           gallery="Gallery 2 — The evidence"
           title="The cue sheet, read against the contract roster."
           lede="Each row is a signed contract; each column is a cut. Fees come from the locked roster in integer cents — an AI-proposed amount is never used — and every figure on this page comes from the same reconciler that drives the dashboard."
         />
-        <article className="cr-paper relative mt-14 -rotate-[0.25deg] rounded-[3px] px-10 pb-10 pt-8 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.9),0_0_0_1px_rgba(0,0,0,0.4)]">
-          <header className="grid grid-cols-[1fr_auto] items-end gap-6 border-b-2 border-cr-ink pb-4">
+        <article className="cr-paper relative mt-14 -rotate-[0.25deg] rounded-[3px] px-5 pb-10 pt-8 shadow-[0_40px_90px_-30px_rgba(0,0,0,0.9),0_0_0_1px_rgba(0,0,0,0.4)] lg:px-10">
+          <header className="grid grid-cols-1 items-end gap-6 border-b-2 border-cr-ink pb-4 lg:grid-cols-[1fr_auto]">
             <div>
               <p className="cr-label text-[9px] text-cr-ink-soft">Music, effects &amp; picture cue sheet · contract roster</p>
-              <p className="mt-1 flex items-center gap-5 font-display text-[30px] leading-tight">
+              <p className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 font-display text-[30px] leading-tight">
                 {dossier.projectTitle}
                 <span className="cr-stamp rotate-[-5deg] px-2.5 py-1.5 text-[12px]" data-status="UNPAID_GHOST">
                   Cut ≠ waived
@@ -503,31 +503,34 @@ function CueSheet({ dossier }: { dossier: Dossier }) {
               <SheetField label="Compared" value="Cut v1 ↔ Cut v2" />
             </dl>
           </header>
-          <table className="mt-2 w-full border-collapse text-left">
-            <thead>
-              <tr className="cr-label text-[8.5px] text-cr-ink-soft">
-                <th scope="col" className="py-3 pr-4 font-semibold">Credited as</th>
-                <th scope="col" className="py-3 pr-4 font-semibold">Legal name</th>
-                <th scope="col" className="py-3 pr-4 font-semibold">Role</th>
-                <th scope="col" className="py-3 pr-4 font-semibold">Contract</th>
-                <th scope="col" className="py-3 pr-6 text-right font-semibold">Fixed fee</th>
-                <th scope="col" className="py-3 pr-4 font-semibold">Rough cut v1</th>
-                <th scope="col" className="py-3 pr-4 font-semibold">Director’s cut v2</th>
-                <th scope="col" className="py-3 font-semibold">Reconciler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dossier.rows.map((row) => (
-                <CueSheetRow key={row.contractId} row={row} />
-              ))}
-            </tbody>
-          </table>
-          <div className="mt-8 grid grid-cols-12 gap-8">
-            <p className="col-span-5 font-type text-[11.5px] leading-relaxed text-cr-ink-soft">
+          {/* Below the desktop breakpoint the sheet keeps its columns and scrolls sideways. */}
+          <div className="overflow-x-auto lg:overflow-visible">
+            <table className="mt-2 w-full min-w-[1080px] border-collapse text-left lg:min-w-0">
+              <thead>
+                <tr className="cr-label text-[8.5px] text-cr-ink-soft">
+                  <th scope="col" className="py-3 pr-4 font-semibold">Credited as</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Legal name</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Role</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Contract</th>
+                  <th scope="col" className="py-3 pr-6 text-right font-semibold">Fixed fee</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Rough cut v1</th>
+                  <th scope="col" className="py-3 pr-4 font-semibold">Director’s cut v2</th>
+                  <th scope="col" className="py-3 font-semibold">Reconciler</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dossier.rows.map((row) => (
+                  <CueSheetRow key={row.contractId} row={row} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-12">
+            <p className="font-type text-[11.5px] leading-relaxed text-cr-ink-soft lg:col-span-5">
               <span className="cr-label mr-2 text-[8px]">Proposal hash</span>
               <span className="break-all text-cr-bond-navy">{dossier.proposalHash}</span>
             </p>
-            <ul className="col-span-7 space-y-1.5">
+            <ul className="space-y-1.5 lg:col-span-7">
               <SheetTotal
                 label={`Executable via PayPal Payouts · ${dossier.executableCount} items`}
                 value={formatUsdCents(dossier.executableCents)}
@@ -563,7 +566,7 @@ function SheetField({ label, value }: { label: string; value: string }) {
 function SheetTotal({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
     <li className="flex items-baseline gap-3 text-[13px]">
-      <span className="shrink-0 font-semibold text-cr-ink">{label}</span>
+      <span className="min-w-0 font-semibold text-cr-ink">{label}</span>
       <span aria-hidden className="min-w-6 flex-1 -translate-y-1 border-b border-dotted border-cr-ink/40" />
       <span className={`cr-numerals shrink-0 font-mono text-[15px] font-bold ${tone}`}>{value}</span>
     </li>
@@ -661,7 +664,7 @@ function SettlementLoop({ dossier }: { dossier: Dossier }) {
     },
   ];
   return (
-    <section id="settlement" aria-labelledby="settlement-title" className="mx-auto max-w-[1360px] scroll-mt-16 px-10 py-28">
+    <section id="settlement" aria-labelledby="settlement-title" className="mx-auto max-w-[1360px] scroll-mt-16 px-5 py-28 lg:px-10">
       <SectionHeading
         id="settlement-title"
         gallery="Gallery 3 — The money"
@@ -672,7 +675,7 @@ function SettlementLoop({ dossier }: { dossier: Dossier }) {
         }
         lede="Credentials never leave the server. Every write carries a PayPal-Request-Id and the payout batch is keyed to the proposal version, so a double click returns the batch that already exists instead of paying anyone twice — and crew payouts stay locked until a producer flips the approval switch in the Patchbay."
       />
-      <ol className="mt-16 grid grid-cols-3 gap-6">
+      <ol className="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {vouchers.map((voucher) => (
           <li key={voucher.step} className={`cr-perf-top relative rounded-b-[3px] px-7 pb-7 pt-8 text-cr-ink ${voucher.paper}`}>
             <div className="flex items-start justify-between gap-4">
@@ -697,8 +700,8 @@ function SettlementLoop({ dossier }: { dossier: Dossier }) {
 function EndpointVault() {
   return (
     <section id="endpoints" aria-labelledby="endpoints-title" className="scroll-mt-16 border-t border-white/[0.06] bg-[#0c0b09] py-28">
-      <div className="mx-auto grid max-w-[1360px] grid-cols-12 gap-x-12 px-10">
-        <div className="col-span-4">
+      <div className="mx-auto grid max-w-[1360px] grid-cols-1 gap-x-12 gap-y-10 px-5 lg:grid-cols-12 lg:gap-y-0 lg:px-10">
+        <div className="lg:col-span-4">
           <p className="cr-label text-[9.5px] text-cr-splice">Gallery 4 — The vault</p>
           <h2 id="endpoints-title" className="mt-4 font-display text-[44px] font-normal leading-[1.04]">
             The raw reels.
@@ -714,18 +717,18 @@ function EndpointVault() {
             Open the AG Studio workspace <span aria-hidden>→</span>
           </Link>
         </div>
-        <ul className="col-span-8 divide-y divide-white/[0.07] border-y border-white/[0.07]">
+        <ul className="divide-y divide-white/[0.07] border-y border-white/[0.07] lg:col-span-8">
           {endpoints.map((endpoint) => (
             <li key={endpoint.href}>
               <Link
                 href={endpoint.href}
-                className="cr-focus group grid grid-cols-[64px_1fr_auto_32px] items-baseline gap-4 py-5 transition-colors hover:bg-white/[0.02]"
+                className="cr-focus group grid grid-cols-[40px_1fr_24px] items-baseline gap-4 py-5 transition-colors hover:bg-white/[0.02] md:grid-cols-[64px_1fr_auto_32px]"
               >
                 <span className="font-mono text-[12px] text-cr-splice">{endpoint.reel}</span>
                 <span className="font-display text-[26px] leading-none text-cr-bone transition-colors group-hover:text-cr-splice">
                   {endpoint.label}
                 </span>
-                <code className="font-mono text-[12px] text-cr-smoke">{endpoint.detail}</code>
+                <code className="hidden font-mono text-[12px] text-cr-smoke md:block">{endpoint.detail}</code>
                 <span aria-hidden className="text-right text-cr-ash transition-transform group-hover:translate-x-1 group-hover:text-cr-splice">
                   →
                 </span>
