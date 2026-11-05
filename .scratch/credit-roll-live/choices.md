@@ -406,3 +406,136 @@ U11 後續：使用者先選「靠我自己完成就用真實 Sandbox」，登�
 ### 本段尾註
 
 P1、P2、P4 都源自同一件事：Ticket 02 的 Sandbox 實測當初卡在缺憑證，`mock fetch` 測試只驗證了「呼叫順序正確」，沒驗證「PayPal 真的會接受」。建議之後每加一個 PayPal 寫入，至少對真實 Sandbox 跑一次。
+
+---
+
+## Pass 4 — 支持者同意後的收款（commit `2b30195`、`540689c`）
+
+起因：Pass 3 的 P2（待付款還是立即入帳）交給使用者決定。使用者在 2026-11-05 15:11:50Z 回「照你建議」，選了 C：保留待付款與付款連結，另外補上「支持者在 PayPal 同意後，由製片人收款（capture，把支持者同意的款項真正轉進商家帳戶）」。P2 到此解決；本段不重判 P2，只記 C 衍生的新決定。
+
+### 八類掃描總覽
+
+1. **資料形狀與格式**：有（Q4 收款後的收據欄位與紀錄取代規則）
+2. **存放位置與命名**：有（Q1 新路由放在 `app/api/credit-roll/supporter-order/capture/`）；內部命名（action 種類 `supporter-capture`、testid `btn-capture-supporter-order`、錯誤碼 `UNKNOWN_SUPPORTER_ORDER`／`NO_PENDING_SUPPORTER_ORDER`／`PAYPAL_ORDER_CAPTURE_FAILED`）合併計數 1 處
+3. **API 契約與錯誤行為**：有（Q1 新路由與 404、Q3 `ORDER_ALREADY_CAPTURED` 視為已收款、Q5 沒有待付款單時前端直接回錯誤）
+4. **新增的相依套件，連同它帶進來的預設行為與上限**：無（`git diff --stat 40fcd50..HEAD -- package.json package-lock.json` 無輸出）
+5. **並行與效能取捨：快取、容量上限、逾時、重試**：有（Q2 每次收款換新的 PayPal-Request-Id）
+6. **範圍解讀：套用範圍比規格寬或窄**：有（Q5 收款不經放行開關、Q7 建立買家測試帳戶、Q8 沒有實跑真實同意、Q9 不補回跳網址）
+7. **測試設定改動：timeout、skip、mock、放寬斷言**：無（`git diff 336fb71..2b30195 -- tests/` 刪除行 0 筆；新增 2 條沿用檔內既有的 mock fetch 寫法）
+8. **之後的程式會照抄的模式**：有（Q1 只認本 session 建立的資源、Q2 每次嘗試換新 Request-Id、Q3 只放行特定錯誤碼再以讀回為準）
+
+---
+
+### 逐條決定明細
+
+#### Q1 — 同意後的收款獨立成新路由，只收 `{orderId}`，而且只認本次伺服器 session 建立的訂單
+- **何時**：commit `2b30195`（`lib/credit-roll-settlement.ts:458-482`、`app/api/credit-roll/supporter-order/capture/route.ts:7-35`）
+- **決定**：
+  - **標題**：新增 `POST /api/credit-roll/supporter-order/capture`；原本建立訂單的路由不變。
+  - **觸發事件**：選 C 之後，支持者在 PayPal 同意過的訂單需要一個收款入口。
+  - **現在怎麼做**：伺服器先在記憶體的訂單清單找這個 orderId，找不到就回 404 `UNKNOWN_SUPPORTER_ORDER`，不呼叫 PayPal；找得到才收款，再用 GET 讀回。
+  - **沒選的做法會怎樣**：讓建立訂單的路由「帶 orderId 就改成收款」，一條路由會有兩種意思；接受任意 orderId，偽造或打錯的 id 會直接送到 PayPal。
+- **規格缺口**：spec 沒有「付款人同意」這一步，也就沒有收款入口。
+- **影響範圍**：Patchbay 的收款鍵，以及之後任何想從別處觸發收款的工作。伺服器重啟後記憶體會清空，舊的待付款單不能直接收款；要先按一次 BTS Order 鍵，PayPal 會依同一個 request id 回同一張單（實測：重啟兩次都拿回 `31S06570LA976733L`，見派工收據資料夾的 `live-run4-us-all-three.json`、`live-capture-attempt1-progress.json`、`live-capture-attempt2-progress.json`），之後才能按收款鍵。
+- **判定**：`sound` — 改動範圍最小、契約單純；只認本 session 建立的單，擋掉任意 id。重啟後要先重建訂單這個限制，在 demo 情境可以接受。
+- **把握度**：中
+
+#### Q2 — 每次收款都用新的 PayPal-Request-Id
+- **何時**：commit `2b30195`（`lib/credit-roll-settlement.ts:458-460`、`:487`；測試 `tests/ticket-02-paypal-settlement-loop.test.ts:953-957`）
+- **決定**：
+  - **標題**：格式是 `<建立訂單的 request id>-CAPTURE-<base36 毫秒>`。
+  - **觸發事件**：支持者同意前按收款，PayPal 會拒絕（422 `ORDER_NOT_APPROVED`）。同意後再按一次時，如果沿用同一個 Request-Id，PayPal 的冪等機制（同一個 id 視為同一個請求、直接回上次的結果）可能把上次的拒絕原樣回傳，這張單就永遠收不了款。
+  - **現在怎麼做**：每次嘗試帶時間戳，id 一定不同；連點由 Patchbay 的執行中鎖鍵（`isActionLocked`）擋下，真的重複收款交給 Q3 處理。
+  - **沒選的做法會怎樣**：像撥款批次那樣用固定 id，可以跨重啟去重，但要冒「回放舊拒絕」的風險；PayPal 會不會快取 4xx 回應，沒有實測。
+- **規格缺口**：spec 的冪等設計只寫給撥款批次。
+- **影響範圍**：收款的重試語意。網路逾時後重送不會被 PayPal 依 Request-Id 去重，要靠 Q3 兜底。
+- **判定**：`sound` — PayPal 官方文件寫明，已收款的訂單「No new captures can be created」，重送成功過的收款會被當成重複請求拒絕（[ORDER_ALREADY_CAPTURED 說明](https://developer.paypal.com/api/rest/troubleshooting/rest_unprocessable_entity#order_already_captured)），所以放棄 Request-Id 去重不會造成重複收款。
+- **把握度**：中
+
+#### Q3 — 重複收款回 422 `ORDER_ALREADY_CAPTURED` 時視為已收款，以 GET 讀回為準
+- **何時**：commit `2b30195`（`lib/paypal.ts:480-497`）
+- **決定**：
+  - **標題**：只放行這一個錯誤碼，其餘錯誤照常拋出。
+  - **觸發事件**：第一次收款其實已在 PayPal 成功，但回應沒回到瀏覽器（逾時或斷線），製片人再按一次。
+  - **現在怎麼做**：接到這個錯誤就改用 GET 讀回訂單，收據顯示 PayPal 的真實狀態（COMPLETED）。
+  - **沒選的做法會怎樣**：當成一般錯誤，已收到錢的訂單會顯示失敗橫幅，製片人會以為沒收到錢。
+- **規格缺口**：spec 沒寫重複收款的行為。
+- **影響範圍**：收款失敗橫幅的判定；之後新增其他收款入口也要沿用。
+- **判定**：`sound` — 和 P2 同一個模式（只放行特定錯誤碼、結果以讀回為準），也正是 PayPal 對這個錯誤的建議處理：不用再做事，GET 訂單即可（[Orders API 疑難排解](https://developer.paypal.com/api/rest/integration/orders-api/troubleshooting)）。不過這個分支目前沒有測試，也沒實測過。
+- **把握度**：中
+
+#### Q4 — 收款後沿用原單欄位、狀態換成讀回值，COMPLETED 時清掉付款連結；紀錄以 orderId 取代原單
+- **何時**：commit `2b30195`（`lib/credit-roll-settlement.ts:490-495`、`:247-249`；測試 `tests/ticket-02-paypal-settlement-loop.test.ts:945-951`）
+- **決定**：
+  - **標題**：同一張 PayPal 訂單在帳上只留一筆。
+  - **觸發事件**：收款成功後，伺服器要決定帳上記一筆還是兩筆。
+  - **現在怎麼做**：`recordSupporterOrder` 先移除同 orderId 的舊紀錄，再把新紀錄放到最前面；`approveUrl` 在 COMPLETED 時設成 null，Patchbay 就不再顯示付款連結和收款鍵。
+  - **沒選的做法會怎樣**：多記一筆，支持者訂單會多算一張，金額重複計入。
+- **規格缺口**：spec 沒定義訂單紀錄從待付款到已收款的變化。
+- **影響範圍**：伺服器端訂單清單、`crewSettlements` 上的 `paypalOrderId` 連結，以及任何依訂單筆數加總的報表。
+- **判定**：`sound` — 一張 PayPal 訂單對應一筆紀錄，與 PayPal 的資料形狀一致；測試驗證收款後清單仍只有 1 筆。
+- **把握度**：高
+
+#### Q5 — Patchbay 狀態層：收款併入建立訂單的同一個分支；沒有待付款單時不打 API；收款不需要放行開關
+- **何時**：commit `2b30195`（`app/dashboard/studio/credit-roll-widget-state.ts:230-253`、`:268-301`；測試 `tests/ticket-03-ag-studio-widgets.test.ts:405-460`）
+- **決定**：
+  - **標題**：新增 action 種類 `supporter-capture`。
+  - **觸發事件**：收據上的收款鍵要接上既有的 `runPatchbaySandboxAction`。
+  - **現在怎麼做**：和 `supporter-order` 共用回應處理與錯誤橫幅，只差路由、請求內容和預設錯誤碼；送出的 orderId 固定取收據上最新那張；沒有收據時直接回 `NO_PENDING_SUPPORTER_ORDER`。放行開關（製片人勾選後才准撥款的 human approval token）仍然只管撥款，收款和建立訂單一樣不需要。
+  - **沒選的做法會怎樣**：另寫一個分支，會複製一份幾乎相同的回應處理；收款也要求放行開關，等於把「收錢」和「付錢」放在同一道閘門後面。
+- **規格缺口**：spec 只對撥款要求人工核准權杖（ticket-02 AC 3，`tests/ticket-02-paypal-settlement-loop.test.ts:330`）；其他寫入的要求是「必須由使用者在 Patchbay 明確操作」（ticket-03 AC 5，`tests/ticket-03-ag-studio-widgets.test.ts:379`），收款鍵屬於後者。
+- **影響範圍**：Patchbay 四種動作的共用邏輯；如果同時有多張待付款單，介面上只能收最新那張。
+- **判定**：`sound` — 共用分支減少重複；收款不經放行開關，與 spec 的閘門範圍一致。
+- **把握度**：中
+
+#### Q6 — 待付款收據加「兩步說明＋收款鍵」，付款連結只接受 `https://`
+- **何時**：commit `2b30195`（`app/dashboard/studio/credit-roll-widgets.tsx:740-782`、`:600-603`）
+- **決定**：
+  - **標題**：收款鍵放在訂單收據裡，不放在主按鍵列。
+  - **觸發事件**：待付款的訂單需要一個地方，讓製片人在支持者同意後收款。
+  - **現在怎麼做**：未收款時，收據底部顯示「1 · supporter approves in PayPal ↗」「2 · capture the approved order here」兩步，以及「Capture approved order」鍵；執行中鎖鍵時停用；收款後兩者都消失，標題改成「capture read-back」。付款連結沿用 P2 的規則，只接受 `https://` 開頭。brief 列的 20 個 testid 全部保留（逐一搜尋 `credit-roll-widgets.tsx`，0 個缺漏；三顆寫入鍵的 testid 經 `PatchKey` 的 `testId` 傳入，`:717` 輸出）。
+  - **沒選的做法會怎樣**：放在主按鍵列，沒有待付款單時會是一顆常駐、按了也沒用的鍵；只放鍵不寫步驟，製片人不知道要先讓支持者同意。
+- **規格缺口**：spec 沒有收款介面。
+- **影響範圍**：Patchbay 收據區的版面。截圖 07 拍攝時還沒有這顆鍵，README 已註明（commit `540689c`）。
+- **判定**：`sound` — 鍵只在需要時出現，既有 testid 不變。
+- **把握度**：高
+
+#### Q7 — 實跑準備：建立美國個人買家測試帳戶；登入時被 LCU 的登入欄位保護擋下，沒有繞過
+- **何時**：session 實測，2026-11-05 約 15:18Z 建帳戶、15:19–15:28Z 嘗試登入（收據：派工收據資料夾的 `lcu-login-redaction-check.json`）
+- **決定**：
+  - **標題**：買家帳戶 `creditroll-fan-ac49b31d@personal.example.com`，美國、Personal、餘額 USD 500。
+  - **觸發事件**：C 的計畫是「我用 Sandbox 買家測試帳戶在 PayPal 頁面按同意」。
+  - **現在怎麼做**：用自訂帳戶表單建立買家帳戶。到結帳頁登入時，LCU 把我輸入登入欄位（帳號、密碼）的文字都換成字面上的 `<redacted>`；建帳戶時讀回的密碼也是這個字串，所以帳戶密碼很可能就是這 10 個字元（未驗證）。訪客刷卡在台灣地區要一起開 PayPal 帳戶，得填新密碼、出生日期和身分證字號，同樣不可行。
+  - **沒選的做法會怎樣**：用頁面腳本直接把值塞進欄位可以避開這層保護，但那就是繞過 LCU 的防護，所以沒做。
+- **規格缺口**：brief 和 C 的計畫都假設 agent 能在 PayPal 頁面登入買家帳戶。
+- **影響範圍**：使用者的 Sandbox 多了 1 個買家帳戶；之後任何要 agent 代登入 PayPal 的實跑，都會卡在同一層保護。
+- **判定**：`sound` — 只影響 Sandbox，可在後台刪除；沒有繞過防護。
+- **把握度**：中
+
+#### Q8 — 真實的付款同意沒有實跑：收款只有單元測試證據，截圖 07 維持 C 之前的版本
+- **何時**：session 紀錄 2026-11-05 15:34:15Z 使用者「我沒看到分頁」、15:36:26Z main「選 B」；README commit `540689c`（收據：派工收據資料夾的 `order-status-before-B.json`）
+- **決定**：
+  - **標題**：停掉伺服器和實跑腳本，不重拍 07。
+  - **觸發事件**：登入被擋（Q7）後，我請使用者在「本人登入同意（A）」和「停在現狀（B）」之間選。使用者說「我沒看到分頁」，我改用預設瀏覽器打開結帳頁；接著 main 轉來「選 B」，訊息中沒有標示「以下為使用者原話」的段落。
+  - **現在怎麼做**：收尾前先用 API 查訂單（15:39:00Z 仍是 CREATED、沒有付款人），確認沒有人已經按了同意，才停掉伺服器和腳本。README 註明 07 早於收款鍵，也註明收款步驟還沒對真實 Sandbox 跑過。訂單 `31S06570LA976733L` 留在 Sandbox，維持 CREATED。
+  - **沒選的做法會怎樣**：等使用者登入同意（A），可以拿到真正的 COMPLETED 並重拍 07，但要使用者親自操作。
+- **規格缺口**：誰來扮演支持者按同意，brief 和 spec 都沒寫。
+- **影響範圍**：收款路由在真實 PayPal 上的行為仍未驗證，尤其是 Q2 的新 Request-Id 和 Q3 的已收款分支；07 不顯示收款鍵。
+- **判定**：`needs-user` — 這是 main 代為拍板的範圍縮減，不是使用者原話；要不要花使用者的時間做一次真實同意，只有使用者能決定。暫定做法：維持 B。撤回方式：重啟 `next start`、按一次 BTS Order 鍵（PayPal 會依同一個 request id 回同一張單）、使用者在結帳頁同意、按收款鍵、重拍 07、更新 README。
+- **把握度**：低
+
+#### Q9 — 不替訂單設定付款後的回跳網址（return URL）
+- **何時**：沿用既有程式，commit `2b30195` 沒有補（`command grep -n "return_url\|experience_context" lib/paypal.ts` 0 筆）
+- **決定**：
+  - **標題**：訂單沒有告訴 PayPal，支持者按完同意後要送去哪裡。
+  - **觸發事件**：準備請使用者在結帳頁按同意時發現這一點。
+  - **現在怎麼做**：不補。支持者按完同意後，可能停在 PayPal 的錯誤頁或空白頁（未驗證）；完成付款要靠製片人在 Patchbay 按收款鍵。
+  - **沒選的做法會怎樣**：補上 `payment_source.paypal.experience_context` 的 `return_url`／`cancel_url`，要先決定支持者回到哪一頁（目前沒有支持者端的頁面）；建立訂單的 request id 目前跨重啟都相同，PayPal 會回同一張舊訂單（內容相同時實測如此；內容改變時的行為未驗證），所以補設定時要一起換 request id。
+- **規格缺口**：spec 沒有支持者端的流程。
+- **影響範圍**：真實支持者的付款體驗；評審如果自己點付款連結走一次，也會遇到。
+- **判定**：`needs-user` — 支持者付款後該看到什麼，是產品方向。暫定做法：不設回跳網址。撤回方式：在建立訂單的請求加上 `experience_context`（return_url／cancel_url 指向一個感謝頁），並讓建立訂單的 request id 帶版本號。
+- **把握度**：低
+
+### 本段尾註
+
+Q7、Q8、Q9 都卡在同一塊：spec 只描述製片人這一端，沒有描述支持者那一端（誰付款、在哪裡同意、付完回到哪裡）。建議回 spec 補一段「支持者付款流程」，再決定 Q8、Q9 的暫定做法要不要撤回。Q2、Q3 和 Pass 3 尾註是同一個教訓：收款路徑目前只有 mock 證據，下次有真實同意時，應該對真實 Sandbox 跑一次。
