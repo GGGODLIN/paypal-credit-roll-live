@@ -13,6 +13,7 @@ import {
   dispatchContributorCrossFilter,
   runPatchbaySandboxAction,
   selectCutVersionView,
+  type CreditRollErrorBanner,
   type CreditRollStageNode,
   type PatchbayActionKind,
 } from './credit-roll-widget-state';
@@ -32,6 +33,27 @@ const rulerOffset = (seconds: number): string =>
 
 const clockLabel = (minutes: number): string =>
   `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+type BannerReading = { headline: string | null; detail: string; meta: string | null };
+
+// PayPal failures reach the banner as "PayPal 422 on <path>: <raw JSON body>", and the server
+// may cut the body short, so fields are picked out by pattern instead of JSON.parse. Anything
+// else (guardrail codes, network errors) is shown as written.
+function readBannerMessage(message: string): BannerReading {
+  const match = /^PayPal (\d{3}) on (\S+?):\s+([\s\S]*)$/.exec(message);
+  if (!match) return { headline: null, detail: message, meta: null };
+  const [, status, path, body] = match;
+  const pick = (key: string) => {
+    const found = new RegExp(`"${key}":"([^"]+)("?)`).exec(body);
+    if (!found) return null;
+    return found[2] ? found[1] : `${found[1]}…`;
+  };
+  return {
+    headline: pick('issue') ?? pick('name'),
+    detail: pick('description') ?? pick('message') ?? body,
+    meta: `${status} · ${path.split('?')[0]}`,
+  };
+}
 
 type LedgerTone = 'bond' | 'splice' | 'hold';
 
@@ -429,9 +451,6 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
     state.stageNodes.map((node) => [node.personId, node.creditedName]),
   );
   const nameFor = (personId: string) => creditedNames.get(personId) ?? personId;
-  const hasReadBack = Boolean(
-    state.latestOrderReceipt || state.latestInvoiceReceipt || state.latestBatchReceipt,
-  );
 
   return (
     <div
@@ -500,23 +519,7 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
         <div aria-hidden className="cr-perforation" />
 
         <section className="space-y-2 bg-cr-paper-shade/55 px-3 pb-3 pt-2">
-          {state.errorBanner && (
-            <div
-              role="alert"
-              data-testid="patchbay-error-banner"
-              className="rounded-[2px] border border-cr-fail-ink/40 bg-[#f6dcd3] px-2.5 py-2 text-cr-fail-ink"
-            >
-              <span className="cr-label block text-[7.5px]">Notice · settlement halted</span>
-              <span className="mt-0.5 block text-[11.5px] font-semibold leading-snug">
-                [{state.errorBanner.code}] {state.errorBanner.message}
-              </span>
-              {state.errorBanner.debugId && (
-                <span className="mt-0.5 block font-mono text-[10px]">
-                  PayPal debug_id: {state.errorBanner.debugId}
-                </span>
-              )}
-            </div>
-          )}
+          {state.errorBanner && <HaltNotice banner={state.errorBanner} />}
 
           {state.inFlightAction && (
             <div
@@ -589,26 +592,12 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
           </div>
         </section>
 
-        <section className="px-3 pb-3 pt-2.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <h4 className="cr-label text-[8px] text-cr-ink-soft">Read-back vouchers</h4>
-            <span className="font-type text-[10px] text-cr-ink-soft">GET after every write</span>
-          </div>
-          {hasReadBack ? (
-            <div className="mt-1.5 space-y-2">
-              {state.latestOrderReceipt && <OrderStub receipt={state.latestOrderReceipt} />}
-              {state.latestInvoiceReceipt && <InvoiceStub receipt={state.latestInvoiceReceipt} />}
-              {state.latestBatchReceipt && (
-                <BatchStub receipt={state.latestBatchReceipt} nameFor={nameFor} />
-              )}
-            </div>
-          ) : (
-            <p className="mt-1.5 rounded-[2px] border border-dashed border-cr-ink/25 px-2.5 py-2 font-type text-[10.5px] leading-snug text-cr-ink-soft">
-              No PayPal read-back yet. Order ids, the invoice QR and per-item payout stamps land
-              here once a sandbox call returns.
-            </p>
-          )}
-        </section>
+        <ReadBackVouchers
+          order={state.latestOrderReceipt}
+          invoice={state.latestInvoiceReceipt}
+          batch={state.latestBatchReceipt}
+          nameFor={nameFor}
+        />
       </div>
 
       <p className="shrink-0 px-1.5 pb-0.5 pt-1.5 text-[10px] leading-snug text-cr-smoke">
@@ -616,6 +605,61 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
         Patchbay approval.
       </p>
     </div>
+  );
+}
+
+function HaltNotice({ banner }: { banner: CreditRollErrorBanner }) {
+  const reading = readBannerMessage(banner.message);
+  const trail = [reading.meta, banner.debugId ? `PayPal debug_id ${banner.debugId}` : null]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <div
+      role="alert"
+      data-testid="patchbay-error-banner"
+      className="rounded-[2px] border border-cr-fail-ink/40 bg-[#f6dcd3] px-2.5 py-2 text-cr-fail-ink [overflow-wrap:anywhere]"
+    >
+      <span className="cr-label block text-[7.5px]">Notice · settlement halted</span>
+      <span className="mt-0.5 block text-[11.5px] font-semibold leading-snug">
+        [{banner.code}] {reading.headline ?? reading.detail}
+      </span>
+      {reading.headline && <span className="mt-0.5 block text-[11px] leading-snug">{reading.detail}</span>}
+      {trail && <span className="mt-1 block font-mono text-[10px] leading-snug opacity-90">{trail}</span>}
+    </div>
+  );
+}
+
+function ReadBackVouchers({
+  order,
+  invoice,
+  batch,
+  nameFor,
+}: {
+  order: SupporterOrderReceipt | null;
+  invoice: ObligationInvoiceReceipt | null;
+  batch: CrewBatchSettlementReceipt | null;
+  nameFor: (personId: string) => string;
+}) {
+  const empty = !order && !invoice && !batch;
+  return (
+    <section className="px-3 pb-3 pt-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <h4 className="cr-label text-[8px] text-cr-ink-soft">Read-back vouchers</h4>
+        <span className="font-type text-[10px] text-cr-ink-soft">GET after every write</span>
+      </div>
+      {empty ? (
+        <p className="mt-1.5 rounded-[2px] border border-dashed border-cr-ink/25 px-2.5 py-2 font-type text-[10.5px] leading-snug text-cr-ink-soft">
+          No PayPal read-back yet. Order ids, the invoice QR and per-item payout stamps land here
+          once a sandbox call returns.
+        </p>
+      ) : (
+        <div className="mt-1.5 space-y-2">
+          {order && <OrderStub receipt={order} />}
+          {invoice && <InvoiceStub receipt={invoice} />}
+          {batch && <BatchStub receipt={batch} nameFor={nameFor} />}
+        </div>
+      )}
+    </section>
   );
 }
 
