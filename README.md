@@ -6,6 +6,22 @@
 
 ---
 
+## Hackathon Provenance & Commit Boundary (What Was Built During the Hackathon)
+
+This project was built from scratch during the **PayPal AI Hackathon** submission period (**November 2–5, 2026**) on top of PayPal's official hackathon starter template (`paypaldev/ag-paypal-demo`):
+
+- **Pre-Hackathon Official Starter Template (`c2d80f0..5de114e`, Sep 27 – Oct 12, 2026)**: Unmodified baseline commits from the official PayPal / AG Grid starter repository ([paypaldev/ag-paypal-demo](https://github.com/paypaldev/ag-paypal-demo), authored by Eddie Jaoude and James Swinton-Bland), which provided the initial Next.js + AG Studio boilerplate.
+- **Built During the PayPal AI Hackathon (`ddad6e0..HEAD`, Nov 2 – Nov 5, 2026)**: 100% of **CreditRoll Live** was designed and implemented during the hackathon window, including:
+  1. **Deterministic End-Credits & Completion-Bond Reconciler (`lib/credit-roll-reconciler.ts`, `lib/credit-roll-data.ts`)**: Cut v1 → Cut v2 `UNPAID_GHOST` detection (`Moth`, `Nyx Frame`), stage-name-to-legal-contract identity resolution, integer-cent guardrail verification (`discardedAiAmountOverrides`), and `NEEDS_REVIEW` hold on ambiguous aliases (`Alex Rivera`).
+  2. **Three-Leg Live PayPal Sandbox Write & Read-Back Settlement Loop (`lib/paypal.ts`, `lib/credit-roll-settlement.ts`, `app/api/credit-roll/*`)**:
+     - `Orders v2 CAPTURE` (`/api/credit-roll/supporter-order` & `/api/credit-roll/supporter-order/capture`) with `ORDER_NOT_APPROVED` buyer approval handoff and idempotent post-approval capture.
+     - `Invoicing v2 + QR Code` (`/api/credit-roll/obligation-invoice`) generating and sending live `SENT` ghost-cut obligation invoices with base64 PNG QR codes.
+     - `Batch Payouts v1` (`/api/credit-roll/settle`) with `PayPal-Request-Id` idempotency and per-item `transaction_status` read-back (`SUCCESS` vs `PENDING` / `UNCLAIMED`).
+  3. **35mm Screening Room Dossier & Two Custom AG Studio 3.0 Widgets (`app/page.tsx`, `app/dossier.ts`, `app/dashboard/studio/credit-roll-widgets.tsx`)**: Full **"Midnight Cutting Table & Completion-Bond Ledger"** UI redesign, `CreditRollStageWidget` (24fps sprocket-lit end-credits stage with `widgetApi.toggleCrossFilter` into AG Grid), and `GhostPatchbayWidget` (ivory tear-off voucher desk with live PayPal Sandbox read-back receipts).
+  4. **21 Automated Acceptance & Live Sandbox Tests (`tests/ticket-01..03*.test.ts`)** and **45-Second Launch Film (`docs/media/credit-roll-live-demo.mp4`)**.
+
+---
+
 ## Visual Gallery
 
 ### The screening room — `/`
