@@ -1,3 +1,5 @@
+import { v5 as uuidv5 } from 'uuid';
+
 export type CutVersion = 'v1' | 'v2';
 
 export type ContractStatus = 'APPROVED' | 'PENDING' | 'DISPUTED' | 'NEEDS_REVIEW';
@@ -851,9 +853,15 @@ export function buildSettlementProposal(
         .join('_'),
     ) ?? 'EMPTY';
 
-  const proposalVersionHash = `CRLIVE-${projectSlug}-${cutSlug}-REV${reconciled.revision}-${rosterDescriptor}-TOTAL${totalExecutableCents}`;
-  const senderBatchId = `BATCH-${projectSlug}-${cutSlug}-R${reconciled.revision}-${executableItems.length}I-${totalExecutableCents}`;
-  const paypalRequestId = `PPREQ-${projectSlug}-${cutSlug}-R${reconciled.revision}-${executableItems.length}I-${totalExecutableCents}`;
+  const identity = uuidv5(JSON.stringify({
+    project: reconciled.projectId, cut: reconciled.cutVersion, revision: reconciled.revision,
+    items: executableItems.map((item) => [item.personId, item.contractId, item.receiverEmail, item.amountCents]),
+  }), uuidv5.URL);
+  const proposalVersionHash = `CRLIVE-${projectSlug}-${cutSlug}-REV${reconciled.revision}-${rosterDescriptor}-TOTAL${totalExecutableCents}-${identity}`;
+  // 已送過 Sandbox 的原始範例保留舊鍵，否則升版本身會再次付款。
+  const legacyDemo = identity === '735cb5cb-598e-5b6e-928b-79a11654cc9c';
+  const senderBatchId = legacyDemo ? 'BATCH-NEON-NOCTURNE-2026-V2-R1-4I-705000' : `CR-${identity}`;
+  const paypalRequestId = legacyDemo ? 'PPREQ-NEON-NOCTURNE-2026-V2-R1-4I-705000' : identity;
 
   return {
     projectId: reconciled.projectId,

@@ -43,6 +43,5 @@ next-env.d.ts
 # worktrees & local build/dispatch artifacts
 .claude/worktrees/
 /dist
-.scratch/credit-roll-live/dispatch-opus-*/receipts/
-.scratch/credit-roll-live/dispatch-opus-*/watch-logs/
+.scratch/
 

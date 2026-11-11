@@ -84,6 +84,7 @@ export type RunPatchbayActionParams = {
   kind: PatchbayActionKind;
   personId?: string | null;
   amountCents?: number;
+  testMode?: boolean;
   humanApproved?: boolean;
   onStateChange?: (state: CreditRollInteractiveState) => void;
   fetchImpl?: typeof fetch;
@@ -390,6 +391,7 @@ export async function runPatchbaySandboxAction(
         approvalToken,
         approvedBy: 'producer-patchbay',
         expectedProposalVersionHash: proposalHash,
+        testMode: params.testMode === true,
       }),
     });
     const payload =

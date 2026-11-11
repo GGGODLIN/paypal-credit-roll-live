@@ -426,6 +426,15 @@ export async function createAndCaptureOrder(
     '/v2/checkout/orders',
     {
       intent: 'CAPTURE',
+      payment_source: {
+        paypal: {
+          experience_context: {
+            return_url: new URL('/dashboard?checkout=approved', process.env.APP_BASE_URL ?? 'https://paypal-credit-roll-live.onrender.com').href,
+            cancel_url: new URL('/dashboard?checkout=cancelled', process.env.APP_BASE_URL ?? 'https://paypal-credit-roll-live.onrender.com').href,
+            shipping_preference: 'NO_SHIPPING',
+          },
+        },
+      },
       purchase_units: [
         {
           reference_id: input.referenceId ?? 'BTS-SUPPORTER-PACK',
@@ -460,7 +469,7 @@ export async function createAndCaptureOrder(
       // PayPal answers the capture with 422 ORDER_NOT_APPROVED until then (seen on the live
       // sandbox). That order is pending, not failed: leave it uncaptured and let the read-back
       // below report its real status and approve link. Any other refusal still fails the call.
-      if (!(err instanceof PayPalApiError && err.status === 422 && err.rawBody.includes('ORDER_NOT_APPROVED'))) {
+      if (!(err instanceof PayPalApiError && err.status === 422 && /ORDER_NOT_APPROVED|PAYER_ACTION_REQUIRED/.test(err.rawBody))) {
         throw err;
       }
     }
@@ -694,28 +703,46 @@ export async function createAndReadBackPayoutBatch(
   createBatchResponse: PayPalPayoutBatchResponse;
   readBackBatch: PayPalPayoutBatchResponse;
 }> {
-  const { data: createBatchResponse } = await postJson<PayPalPayoutBatchResponse>(
-    '/v1/payments/payouts',
-    {
-      sender_batch_header: {
-        sender_batch_id: input.senderBatchId,
-        email_subject: input.emailSubject,
-        email_message: input.emailMessage,
-      },
-      items: input.items.map((item) => ({
-        recipient_type: 'EMAIL',
-        amount: {
-          value: formatCentsAsUsdString(item.amountCents),
-          currency: item.currencyCode ?? 'USD',
+  let createBatchResponse: PayPalPayoutBatchResponse;
+  try {
+    const created = await postJson<PayPalPayoutBatchResponse>(
+      '/v1/payments/payouts',
+      {
+        sender_batch_header: {
+          sender_batch_id: input.senderBatchId,
+          email_subject: input.emailSubject,
+          email_message: input.emailMessage,
         },
-        receiver: item.receiverEmail,
-        note: item.note,
-        sender_item_id: item.senderItemId,
-      })),
-    },
-    input.requestId,
-    options,
-  );
+        items: input.items.map((item) => ({
+          recipient_type: 'EMAIL',
+          amount: {
+            value: formatCentsAsUsdString(item.amountCents),
+            currency: item.currencyCode ?? 'USD',
+          },
+          receiver: item.receiverEmail,
+          note: item.note,
+          sender_item_id: item.senderItemId,
+        })),
+      },
+      input.requestId,
+      options,
+    );
+    createBatchResponse = created.data;
+  } catch (err) {
+    if (!(err instanceof PayPalApiError) || !err.rawBody.includes('DUPLICATE_BATCH_ID')) throw err;
+    const duplicate = JSON.parse(err.rawBody) as { links?: { href?: string }[] };
+    const existing = duplicate.links?.map((link) => {
+      try {
+        const url = new URL(link.href ?? '');
+        return /^\/v1\/payments\/payouts\/[A-Za-z0-9-]+$/.test(url.pathname) ? url.pathname : null;
+      } catch { return null; }
+    }).find((path) => path !== null);
+    // 只以固定 Sandbox 主機查回傳的批次 ID，不追隨上游提供的任意主機。
+    if (!existing) throw err;
+    const readBackBatch = await get<PayPalPayoutBatchResponse>(existing, options);
+    if (readBackBatch.batch_header.sender_batch_header?.sender_batch_id !== input.senderBatchId) throw err;
+    return { createBatchResponse: readBackBatch, readBackBatch };
+  }
 
   const payoutBatchId = createBatchResponse.batch_header?.payout_batch_id;
   if (!payoutBatchId) {

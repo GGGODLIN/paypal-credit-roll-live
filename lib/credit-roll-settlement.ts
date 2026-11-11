@@ -1,3 +1,4 @@
+import { v5 as uuidv5 } from 'uuid';
 import {
   buildSettlementProposal,
   DEFAULT_CREDIT_ROLL_SCENARIO,
@@ -76,6 +77,7 @@ export type CrewBatchSettlementReceipt = {
   totalAmountCents: number;
   items: PayoutItemReceipt[];
   settledAt: string;
+  testMode?: boolean;
 };
 
 export type SettlementErrorDetail = {
@@ -155,6 +157,7 @@ export type CrewBatchSettlementRequestInput = {
   approvedBy?: string | null;
   expectedProposalVersionHash?: string | null;
   requestedPersonIds?: string[];
+  testMode?: boolean;
 };
 
 export type CrewBatchSettlementOperationResult = {
@@ -331,11 +334,14 @@ function toSettlementErrorResponse(
   secretForRedaction?: string,
 ): { statusCode: number; error: SettlementErrorDetail } {
   if (err instanceof PayPalApiError) {
+    const insufficientFunds = err.rawBody.includes('INSUFFICIENT_FUNDS');
     return {
       statusCode: err.status,
       error: {
-        code: 'PAYPAL_API_ERROR',
-        message: redactPayPalSecrets(err.message, secretForRedaction),
+        code: insufficientFunds ? 'PAYPAL_INSUFFICIENT_FUNDS' : 'PAYPAL_API_ERROR',
+        message: insufficientFunds
+          ? 'PayPal Sandbox has insufficient funds. Top up the Sandbox business balance, then use the separate $0.01 test payout before submitting the full contract batch. Test payouts do not settle contracts.'
+          : redactPayPalSecrets(err.message, secretForRedaction),
         paypalStatus: err.status,
         debugId: err.debugId,
       },
@@ -416,8 +422,8 @@ export async function createAndCaptureSupporterOrder(
     );
 
     const approveLink =
-      readBackOrder.links?.find((l) => l.rel === 'approve')?.href ??
-      createOrderResponse.links?.find((l) => l.rel === 'approve')?.href ??
+      readBackOrder.links?.find((l) => l.rel === 'approve' || l.rel === 'payer-action')?.href ??
+      createOrderResponse.links?.find((l) => l.rel === 'approve' || l.rel === 'payer-action')?.href ??
       null;
 
     const receipt: SupporterOrderReceipt = {
@@ -717,7 +723,25 @@ export async function executeCrewBatchPayoutAndReadBack(
   }
 
   // Step 2: Idempotent deduplication on proposalVersionHash BEFORE issuing a second POST
-  const existingBatch = store.getBatchByProposalHash(proposal.proposalVersionHash);
+  const testMode = request.testMode === true;
+  const requestedIds = new Set(request.requestedPersonIds ?? proposal.executableItems.map((item) => item.personId));
+  if (!testMode && (requestedIds.size !== proposal.executableItems.length || proposal.executableItems.some((item) => !requestedIds.has(item.personId)))) {
+    return {
+      ok: false, statusCode: 400, idempotentReplay: false, validation,
+      error: { code: 'PARTIAL_PAYOUT_NOT_SUPPORTED', message: 'Approve the complete proposal for settlement, or use the separate one-cent test. Partial contract payouts are not supported.', paypalStatus: null, debugId: null },
+      state: currentState,
+    };
+  }
+  const items = testMode
+    ? validation.approvedItems.slice(0, 1).map((item) => ({ ...item, amountCents: 1, note: 'CreditRoll Sandbox test only; does not settle the contract.' }))
+    : proposal.executableItems;
+  // 小額測試有獨立鍵；正式付款只接受完整提案，避免重疊子集合重付。
+  const executionKey = uuidv5(JSON.stringify({ proposal: proposal.proposalVersionHash, testMode, items: items.map((item) => [item.personId, item.receiverEmail, item.amountCents]) }), uuidv5.URL);
+  const fullBatch = !testMode;
+  const senderBatchId = fullBatch ? proposal.senderBatchId : `CR-${executionKey}`;
+  const paypalRequestId = fullBatch ? proposal.paypalRequestId : executionKey;
+  const receiptKey = fullBatch ? proposal.proposalVersionHash : `${proposal.proposalVersionHash}:${executionKey}`;
+  const existingBatch = store.getBatchByProposalHash(receiptKey);
   if (existingBatch) {
     return {
       ok: true,
@@ -736,11 +760,11 @@ export async function executeCrewBatchPayoutAndReadBack(
   try {
     const { readBackBatch } = await createAndReadBackPayoutBatch(
       {
-        senderBatchId: proposal.senderBatchId,
-        requestId: proposal.paypalRequestId,
+        senderBatchId,
+        requestId: paypalRequestId,
         emailSubject: `CreditRoll Live Crew Settlement (${currentState.reconciled.projectId} ${currentState.reconciled.cutVersion})`,
         emailMessage: `Verified production crew settlement for ${currentState.reconciled.projectTitle}.`,
-        items: validation.approvedItems.map((item) => ({
+        items: items.map((item) => ({
           receiverEmail: item.receiverEmail,
           amountCents: item.amountCents,
           currencyCode: 'USD',
@@ -761,16 +785,17 @@ export async function executeCrewBatchPayoutAndReadBack(
 
     const receipt: CrewBatchSettlementReceipt = {
       payoutBatchId,
-      senderBatchId: proposal.senderBatchId,
-      paypalRequestId: proposal.paypalRequestId,
-      proposalVersionHash: proposal.proposalVersionHash,
+      senderBatchId,
+      paypalRequestId,
+      proposalVersionHash: receiptKey,
+      testMode,
       batchStatus: readBackBatch.batch_header.batch_status ?? 'PENDING',
-      totalAmountCents: validation.totalAmountCents,
-      items: itemReceipts,
+      totalAmountCents: items.reduce((sum, item) => sum + item.amountCents, 0),
+      items: testMode ? itemReceipts.filter((item) => item.personId === items[0]?.personId).map((item) => ({ ...item, amountCents: 1 })) : itemReceipts,
       settledAt: new Date().toISOString(),
     };
 
-    store.recordBatchSettlement(receipt, updatedRows);
+    store.recordBatchSettlement(receipt, testMode ? currentState.reconciled.crewSettlements : updatedRows);
 
     return {
       ok: true,

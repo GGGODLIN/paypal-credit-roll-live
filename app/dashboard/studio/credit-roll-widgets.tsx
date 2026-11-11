@@ -7,6 +7,7 @@ import type {
   ObligationInvoiceReceipt,
   SupporterOrderReceipt,
 } from '@/lib/credit-roll-settlement';
+import { CreditRollAiReviewPanel } from './credit-roll-ai-review';
 import { formatUsdCents } from '@/lib/format-usd';
 import {
   creditRollInteractiveStore,
@@ -430,12 +431,13 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
     });
   };
 
-  const triggerSandboxAction = async (kind: PatchbayActionKind) => {
+  const triggerSandboxAction = async (kind: PatchbayActionKind, testMode = false) => {
     const current = creditRollInteractiveStore.getState();
     const next = await runPatchbaySandboxAction(current, {
       kind,
       personId: current.selectedPersonId,
       humanApproved: current.humanApproved,
+      testMode,
       onStateChange(inFlight) {
         creditRollInteractiveStore.setState(inFlight);
       },
@@ -592,6 +594,14 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
           </div>
         </section>
 
+        <CreditRollAiReviewPanel />
+        <div className="px-3 py-2 text-cr-ink">
+          <button type="button" disabled={state.isActionLocked} onClick={() => { void triggerSandboxAction('batch-settlement', true); }} className="cr-label rounded-[2px] border border-cr-ink/30 px-3 py-2 text-[9px] disabled:opacity-50">
+            Test one crew payout · $0.01
+          </button>
+          <p className="mt-1 text-[10px]">Requires producer approval. Separate test receipt; does not settle any contract.</p>
+          {state.latestBatchReceipt?.testMode && <p role="status" className="mt-1 text-[11px]">Sandbox test only · {state.latestBatchReceipt.payoutBatchId} · {state.latestBatchReceipt.batchStatus}</p>}
+        </div>
         <ReadBackVouchers
           order={state.latestOrderReceipt}
           invoice={state.latestInvoiceReceipt}
@@ -605,8 +615,8 @@ export function GhostPatchbayWidget(params: AgWidgetParams) {
       </div>
 
       <p className="shrink-0 px-1.5 pb-0.5 pt-1.5 text-[10px] leading-snug text-cr-smoke">
-        AI Assistant can inspect ghosted crew &amp; stage names; all PayPal writes require human
-        Patchbay approval.
+        AI reviews explain credit/contract evidence. Producer approval gates crew payouts;
+        supporter checkout and obligation invoices are separate explicit actions.
       </p>
     </div>
   );

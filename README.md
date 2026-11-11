@@ -12,13 +12,13 @@ This project was built from scratch during the **PayPal AI Hackathon** submissio
 
 - **Pre-Hackathon Official Starter Template (`c2d80f0..5de114e`, Sep 27 – Oct 12, 2026)**: Unmodified baseline commits from the official PayPal / AG Grid starter repository ([paypaldev/ag-paypal-demo](https://github.com/paypaldev/ag-paypal-demo), authored by Eddie Jaoude and James Swinton-Bland), which provided the initial Next.js + AG Studio boilerplate.
 - **Built During the PayPal AI Hackathon (`ddad6e0..HEAD`, Nov 2 – Nov 5, 2026)**: 100% of **CreditRoll Live** was designed and implemented during the hackathon window, including:
-  1. **Deterministic End-Credits & Completion-Bond Reconciler (`lib/credit-roll-reconciler.ts`, `lib/credit-roll-data.ts`)**: Cut v1 → Cut v2 `UNPAID_GHOST` detection (`Moth`, `Nyx Frame`), stage-name-to-legal-contract identity resolution, integer-cent guardrail verification (`discardedAiAmountOverrides`), and `NEEDS_REVIEW` hold on ambiguous aliases (`Alex Rivera`).
+  1. **Deterministic End-Credits & Completion-Bond Reconciler (`lib/credit-roll-reconciler.ts`)**: Cut v1 → Cut v2 `UNPAID_GHOST` detection (`Moth`, `Nyx Frame`), stage-name-to-legal-contract identity resolution, integer-cent guardrail verification (`discardedAiAmountOverrides`), and `NEEDS_REVIEW` hold on ambiguous aliases (`Alex Rivera`).
   2. **Three-Leg Live PayPal Sandbox Write & Read-Back Settlement Loop (`lib/paypal.ts`, `lib/credit-roll-settlement.ts`, `app/api/credit-roll/*`)**:
      - `Orders v2 CAPTURE` (`/api/credit-roll/supporter-order` & `/api/credit-roll/supporter-order/capture`) with `ORDER_NOT_APPROVED` buyer approval handoff and idempotent post-approval capture.
      - `Invoicing v2 + QR Code` (`/api/credit-roll/obligation-invoice`) generating and sending live `SENT` ghost-cut obligation invoices with base64 PNG QR codes.
      - `Batch Payouts v1` (`/api/credit-roll/settle`) with `PayPal-Request-Id` idempotency and per-item `transaction_status` read-back (`SUCCESS` vs `PENDING` / `UNCLAIMED`).
   3. **35mm Screening Room Dossier & Two Custom AG Studio 3.0 Widgets (`app/page.tsx`, `app/dossier.ts`, `app/dashboard/studio/credit-roll-widgets.tsx`)**: Full **"Midnight Cutting Table & Completion-Bond Ledger"** UI redesign, `CreditRollStageWidget` (24fps sprocket-lit end-credits stage with `widgetApi.toggleCrossFilter` into AG Grid), and `GhostPatchbayWidget` (ivory tear-off voucher desk with live PayPal Sandbox read-back receipts).
-  4. **21 Automated Acceptance & Live Sandbox Tests (`tests/ticket-01..03*.test.ts`)** and **45-Second Launch Film (`docs/media/credit-roll-live-demo.mp4`)**.
+  4. **Automated acceptance tests** in the [tests directory](/tests) and a [public launch film](https://youtu.be/cE3SuZF7sic). The film is hosted on YouTube, not committed as an MP4.
 
 ---
 
@@ -63,7 +63,7 @@ Independent film, animation, podcast, and indie game productions treat their end
 ### 1. Two Native AG Studio Custom Widgets (`app/dashboard/studio/credit-roll-widgets.tsx`)
 Registered via AG Studio's `createWidgets` API with full `formatShape` and `ai` metadata:
 - **`credit-roll-stage` (Interactive Rolling Credit Roll Stage)**:
-  - Playable, rewindable cinema end-credits roll with a **Cut v1 (Rough Cut) ↔ Cut v2 (Director's Cut)** toggle.
+  - Play/pause cinema end-credits animation with a **Cut v1 (Rough Cut) ↔ Cut v2 (Director's Cut)** toggle. There is no rewind control.
   - Highlights contributors cut in v2 as glowing translucent **`UNPAID_GHOST`** nodes (*"Removed from Cut v2 · Contract Fee Still Owed"*).
   - Clicking any contributor chip or ghost credit invokes `widgetApi.toggleCrossFilter(...)` on `personId`, cross-filtering the companion **AG Grid** (`crewSettlements`, `creditCues`, `crewMembers`) to that contributor's cues, contract, and PayPal receipts.
 - **`ghost-patchbay` (Ghost Diff & Identity Patchbay)**:
@@ -75,12 +75,27 @@ Registered via AG Studio's `createWidgets` API with full `formatShape` and `ai` 
 - Blocks unverified or ambiguous recipients (`NEEDS_REVIEW`) before any PayPal network request is sent.
 
 ### 3. Two-Way PayPal Sandbox Write & Read-Back Loop (`lib/paypal.ts` & `lib/credit-roll-settlement.ts`)
-All PayPal calls run server-side with `PayPal-Request-Id` idempotency headers and automatic `GET` resource read-back:
+PayPal writes run server-side with `PayPal-Request-Id` headers. The settlement operations then read the resource back with `GET`; OAuth and QR generation are not resource read-backs:
 - **Behind-the-Scenes Supporter Pack (`Orders v2 CAPTURE`)**: `POST /v2/checkout/orders` (`intent: CAPTURE`) → `POST /v2/checkout/orders/{id}/capture` → `GET /v2/checkout/orders/{id}` (`/api/credit-roll/supporter-order`). Until a supporter approves the order at PayPal's approve link, PayPal answers the capture with `ORDER_NOT_APPROVED`; the order is then recorded as pending (`CREATED`) with that link rather than failed. Once the supporter approves, the voucher's **Capture approved order** key calls `/api/credit-roll/supporter-order/capture`, which captures that order and reads it back `COMPLETED`; a repeat capture that PayPal answers with `ORDER_ALREADY_CAPTURED` is read back the same way. The test suite covers this step, but it has not yet been run against the live Sandbox.
 - **Ghost-Cut Obligation Invoice & Live QR Code (`Invoicing v2`)**: `POST /v2/invoicing/invoices` → `POST /v2/invoicing/invoices/{id}/send` → `POST /v2/invoicing/invoices/{id}/generate-qr-code` → `GET /v2/invoicing/invoices/{id}` (`/api/credit-roll/obligation-invoice`).
 - **Idempotent Crew Batch Payouts (`Batch Payouts v1`)**: `POST /v1/payments/payouts` → `GET /v1/payments/payouts/{batch_id}` (`/api/credit-roll/settle`), stamping a contributor node as `PAID` **only** when their individual item `transaction_status` is `SUCCESS` (while preserving `PENDING`, `UNCLAIMED`, and `FAILED` states).
 
 ---
+
+## AI Review & Three-Minute Judge Walkthrough
+
+Open the [screening room](https://paypal-credit-roll-live.onrender.com) and [dashboard](https://paypal-credit-roll-live.onrender.com/dashboard). The app has no login and needs no app test credentials. Render may cold-start; wait for the dashboard to finish loading.
+
+1. Switch Cut v1 / Cut v2 and click Moth to cross-filter the ledger.
+2. In Ghost Patchbay, press **AI · Review credits & contracts**. With `AG_STUDIO_OPENAI_API_KEY` or `OPENAI_API_KEY`, this sends fictional cue/contract data to the OpenAI Responses API. The default model is **gpt-4o-mini**; `OPENAI_MODELS` selects another provider-supported model. `OPENAI_BASE_URL` supports a compatible `/v1` endpoint for both this review and Studio chat. The receipt shows the provider-returned model, response ID, request ID and token usage, or explicitly says a field was not supplied.
+3. Without a key, the review explicitly says **fallback: deterministic-local**, has no model receipt and makes no AI call. A configured provider failure returns an error; it is never presented as a local AI success. Review text is advisory and cannot change fees, recipients or settlement eligibility.
+4. Inspect receipts without sending money. If testing a payout, tick producer approval and select **Test one crew payout · $0.01**. This sends one cent to one verified demo recipient and never settles a contract. Full crew payout is a separate action using locked contract amounts. Both require sufficient Sandbox funds, including fees; an insufficient-funds response explains the next step.
+
+For supporter checkout, use your own **PayPal Sandbox personal buyer** account at PayPal's approval page; app login credentials are not required and no buyer password is published here. Approve at PayPal, return to the dashboard, then press **Capture approved order**. Keep the current tab/server alive: pending order receipts are held in memory. Set `APP_BASE_URL` to the deployed origin so return/cancel destinations point to that deployment. Creating the order alone does not charge a supporter.
+
+Payout identifiers use a deterministic UUID derived from project, cut, revision, contract IDs, receiver addresses and integer amounts. The exact original demo proposal retains its previously submitted legacy key so this upgrade cannot issue that batch again under a new key. On a duplicate batch error after restart, the client reads the original PayPal batch from the error's batch link and verifies its sender ID; it does not mint a fresh transfer key. This relies on PayPal retaining the original batch and supplying its link; there is no durable local settlement database. Test payouts have separate keys. Formal settlement accepts the full approved roster only; an explicit full roster reuses the same key and a partial roster is rejected before any network request. Changing a proposal is not an instruction to repay an already settled contract: this demo is not a production payroll system.
+
+The original implementation dates above describe the initial build; the audit remediation adds explicit AI review, redirect destinations and restart-safe batch recovery. Historical screenshots predate these controls. Internal `.scratch` files are excluded from the current tree; prior Git history is not rewritten.
 
 ## Quick Start & Local Verification
 
@@ -98,17 +113,22 @@ Fill in `.env.local` with your PayPal Sandbox credentials:
 ```env
 PAYPAL_CLIENT_ID=your_sandbox_client_id
 PAYPAL_SECRET=your_sandbox_secret
-# Optional: AG Studio license key & OpenAI key for the built-in Studio AI chat
+# Optional license; AI key is required for real model review
 AG_STUDIO=
 AG_STUDIO_OPENAI_API_KEY=
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODELS=gpt-4o-mini
+APP_BASE_URL=https://paypal-credit-roll-live.onrender.com
 ```
 
-### 2. Run the Automated Test Suite (21 Acceptance & Live-Sandbox Tests)
+### 2. Run the Automated Test Suite (mocked API boundaries; no real transfers)
 ```bash
-node --experimental-strip-types --test \
-  tests/ticket-01-reconciler-and-studio-data.test.ts \
-  tests/ticket-02-paypal-settlement-loop.test.ts \
-  tests/ticket-03-ag-studio-widgets.test.ts
+node --experimental-strip-types --test --test-concurrency=3 tests/*.test.ts
+npx next typegen
+npx tsc --noEmit
+npm run lint
+npm run build
 ```
 
 ### 3. Start the Application
@@ -132,7 +152,7 @@ app/api/credit-roll/settle/               POST route for human-approved Batch Pa
 app/dashboard/studio/credit-roll-widgets.tsx        Interactive Credit Roll Stage & Ghost Patchbay Custom Widgets
 app/dashboard/studio/credit-roll-widget-state.ts    AG Studio Custom Widget definitions, cross-filter & action store
 app/dashboard/studio/data.ts              AG Studio relational schema (crewMembers, creditCues, crewSettlements)
-tests/                                    21 automated tests: Tickets 01–03 acceptance plus four from the live-sandbox runs (two regressions, two for capture after approval)
+tests/                                    Acceptance and regression tests with mocked PayPal / AI network boundaries
 ```
 
 ---
