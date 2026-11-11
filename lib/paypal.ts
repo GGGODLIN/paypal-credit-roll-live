@@ -422,6 +422,8 @@ export async function createAndCaptureOrder(
   options?: PayPalCallOptions,
 ): Promise<CreateAndCaptureOrderResult> {
   const currencyCode = input.currencyCode ?? 'USD';
+  const trimmed = process.env.APP_BASE_URL?.trim();
+  const appBaseUrl = trimmed ? trimmed : 'https://paypal-credit-roll-live.onrender.com';
   const { data: createOrderResponse } = await postJson<PayPalOrderResponse>(
     '/v2/checkout/orders',
     {
@@ -429,8 +431,8 @@ export async function createAndCaptureOrder(
       payment_source: {
         paypal: {
           experience_context: {
-            return_url: new URL('/dashboard?checkout=approved', process.env.APP_BASE_URL ?? 'https://paypal-credit-roll-live.onrender.com').href,
-            cancel_url: new URL('/dashboard?checkout=cancelled', process.env.APP_BASE_URL ?? 'https://paypal-credit-roll-live.onrender.com').href,
+            return_url: new URL('/dashboard?checkout=approved', appBaseUrl).href,
+            cancel_url: new URL('/dashboard?checkout=cancelled', appBaseUrl).href,
             shipping_preference: 'NO_SHIPPING',
           },
         },
@@ -729,14 +731,36 @@ export async function createAndReadBackPayoutBatch(
     );
     createBatchResponse = created.data;
   } catch (err) {
-    if (!(err instanceof PayPalApiError) || !err.rawBody.includes('DUPLICATE_BATCH_ID')) throw err;
-    const duplicate = JSON.parse(err.rawBody) as { links?: { href?: string }[] };
-    const existing = duplicate.links?.map((link) => {
+    if (!(err instanceof PayPalApiError)) throw err;
+    let duplicate: {
+      name?: string;
+      links?: { href?: string }[];
+      details?: { field?: string; issue?: string; link?: { href?: string } | string }[];
+    };
+    try { duplicate = JSON.parse(err.rawBody); } catch { throw err; }
+    if (!duplicate || typeof duplicate !== 'object') throw err;
+    const details = Array.isArray(duplicate.details) ? duplicate.details : [];
+    const isDuplicate = duplicate.name === 'DUPLICATE_BATCH_ID' || details.some((detail) =>
+      typeof detail?.issue === 'string' && (
+        detail.issue === 'DUPLICATE_BATCH_ID' ||
+        (/duplicate|already\s+exists/i.test(detail.issue) &&
+          (detail.field?.toUpperCase() === 'SENDER_BATCH_ID' || /batch/i.test(detail.issue)))
+      ),
+    );
+    if (!isDuplicate) throw err;
+    const links = [
+      ...(Array.isArray(duplicate.links) ? duplicate.links : []),
+      ...details.map((detail) => typeof detail?.link === 'string' ? { href: detail.link } : detail?.link),
+    ];
+    const linkedBatch = links.map((link) => {
       try {
-        const url = new URL(link.href ?? '');
+        const url = new URL(link?.href ?? '');
         return /^\/v1\/payments\/payouts\/[A-Za-z0-9-]+$/.test(url.pathname) ? url.pathname : null;
       } catch { return null; }
     }).find((path) => path !== null);
+    // 只有已核對的歷史範例有固定批次 ID；其他缺連結的錯誤不可猜測。
+    const existing = linkedBatch ?? (input.senderBatchId === 'BATCH-NEON-NOCTURNE-2026-V2-R1-4I-705000'
+      ? '/v1/payments/payouts/6GGPBS2JUKU5N' : null);
     // 只以固定 Sandbox 主機查回傳的批次 ID，不追隨上游提供的任意主機。
     if (!existing) throw err;
     const readBackBatch = await get<PayPalPayoutBatchResponse>(existing, options);

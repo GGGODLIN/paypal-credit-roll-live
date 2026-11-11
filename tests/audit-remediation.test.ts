@@ -30,6 +30,9 @@ const { buildSettlementProposal, DEFAULT_CREDIT_ROLL_SCENARIO, createHumanApprov
 const { createAndCaptureOrder, createAndReadBackPayoutBatch } = await import('../lib/paypal');
 const { createSettlementStore, createAndCaptureSupporterOrder, executeCrewBatchPayoutAndReadBack } = await import('../lib/credit-roll-settlement');
 const { POST } = await import('../app/api/ai/responses/route');
+const { aiResponsesUrl } = await import('../lib/ai');
+const json = (data: unknown, status = 200, headers = {}) => Response.json(data, { status, headers });
+
 test('checkout preserves payer-action link returned for payment_source orders', async () => {
   const result = await createAndCaptureSupporterOrder({}, {
     store: createSettlementStore(), clientId: 'fake-id', clientSecret: 'fake-secret',
@@ -74,7 +77,66 @@ test('explicit full roster replays same batch and partial roster cannot repay co
   assert.equal(posts, 1);
 });
 
-const json = (data: unknown, status = 200, headers = {}) => Response.json(data, { status, headers });
+for (const value of ['', '   ', ' https://custom.example/v1/ ']) {
+  test(`base URL configuration handles ${JSON.stringify(value)}`, async () => {
+    const previousAi = process.env.OPENAI_BASE_URL;
+    const previousApp = process.env.APP_BASE_URL;
+    try {
+      process.env.OPENAI_BASE_URL = value;
+      process.env.APP_BASE_URL = value;
+      assert.equal(aiResponsesUrl(), value.trim() ? 'https://custom.example/v1/responses' : 'https://api.openai.com/v1/responses');
+      let context: Record<string, string> = {};
+      await createAndCaptureOrder({ amountCents: 1, requestId: 'empty-base-test', capture: false }, {
+        clientId: 'fake-id', clientSecret: 'fake-secret', fetchImpl: async (url, init) => {
+          if (String(url).endsWith('/token')) return json({ access_token: 'fake-token', expires_in: 3600 });
+          if (init?.method === 'POST') context = JSON.parse(String(init.body)).payment_source.paypal.experience_context;
+          return json({ id: 'ORDER-BASE', status: 'CREATED' });
+        },
+      });
+      const origin = value.trim() ? 'https://custom.example' : 'https://paypal-credit-roll-live.onrender.com';
+      assert.equal(context.return_url, `${origin}/dashboard?checkout=approved`);
+      assert.equal(context.cancel_url, `${origin}/dashboard?checkout=cancelled`);
+    } finally {
+      if (previousAi === undefined) delete process.env.OPENAI_BASE_URL; else process.env.OPENAI_BASE_URL = previousAi;
+      if (previousApp === undefined) delete process.env.APP_BASE_URL; else process.env.APP_BASE_URL = previousApp;
+    }
+  });
+}
+
+for (const variant of ['detail-link', 'top-level-links', 'legacy-no-link', 'unknown-no-link', 'wrong-sender', 'unrelated-business-error']) {
+  test(`Payouts v1 USER_BUSINESS_ERROR recovery: ${variant}`, async () => {
+    const legacyKey = 'BATCH-NEON-NOCTURNE-2026-V2-R1-4I-705000';
+    const senderBatchId = variant === 'legacy-no-link' || variant === 'unrelated-business-error' ? legacyKey : 'stable-v1-key';
+    const expectedBatch = variant === 'legacy-no-link' ? '6GGPBS2JUKU5N' : 'EXISTING-V1';
+    let posts = 0;
+    let reads = 0;
+    const link = { href: 'https://api-m.sandbox.paypal.com/v1/payments/payouts/EXISTING-V1', rel: 'self' };
+    const error = {
+      name: 'USER_BUSINESS_ERROR',
+      details: [{ field: 'SENDER_BATCH_ID', issue: variant === 'unrelated-business-error' ? 'Invalid sender batch id' : 'Batch with given sender_batch_id already exists', ...(variant === 'detail-link' || variant === 'wrong-sender' ? { link } : {}) }],
+      ...(variant === 'top-level-links' ? { links: [link] } : {}),
+    };
+    const operation = () => createAndReadBackPayoutBatch({
+      senderBatchId, requestId: 'v1-recovery', emailSubject: 'test', emailMessage: 'test',
+      items: [{ receiverEmail: 'crew@example.com', amountCents: 1, note: 'test', senderItemId: 'crew' }],
+    }, { clientId: 'fake-id', clientSecret: 'fake-secret', fetchImpl: async (url, init) => {
+      if (String(url).endsWith('/token')) return json({ access_token: 'fake-token', expires_in: 3600 });
+      if (init?.method === 'POST') { posts++; return json(error, 400); }
+      reads++;
+      assert.equal(String(url), `https://api-m.sandbox.paypal.com/v1/payments/payouts/${expectedBatch}`);
+      return json({ batch_header: { payout_batch_id: expectedBatch, batch_status: 'SUCCESS', sender_batch_header: { sender_batch_id: variant === 'wrong-sender' ? 'not-the-sender' : senderBatchId } } });
+    } });
+    if (['unknown-no-link', 'wrong-sender', 'unrelated-business-error'].includes(variant)) {
+      await assert.rejects(operation, /PayPal 400/);
+      assert.equal(reads, variant === 'wrong-sender' ? 1 : 0);
+    } else {
+      const result = await operation();
+      assert.equal(result.readBackBatch.batch_header.payout_batch_id, expectedBatch);
+      assert.equal(reads, 1);
+    }
+    assert.equal(posts, 1);
+  });
+}
 
 test('payout identity changes for a different receiver even when totals and revision match', () => {
   const original = buildSettlementProposal();

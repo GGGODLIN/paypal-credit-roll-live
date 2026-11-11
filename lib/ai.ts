@@ -6,7 +6,8 @@ export function openAiKey(): string | undefined {
 }
 
 export function aiResponsesUrl(): string {
-  const base = (process.env.OPENAI_BASE_URL?.trim() ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const trimmed = process.env.OPENAI_BASE_URL?.trim();
+  const base = (trimmed ? trimmed : 'https://api.openai.com/v1').replace(/\/+$/, '');
   const url = new URL(`${base}/responses`);
   if (url.username || url.password || !['https:', 'http:'].includes(url.protocol)) {
     throw new Error('Invalid OPENAI_BASE_URL');
