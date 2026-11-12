@@ -1,3 +1,20 @@
+## Hackathon Provenance & Commit Boundary (What Was Built During the Hackathon)
+
+**CreditRoll Live** was built during the **PayPal AI Hackathon submission period (November 2–12, 2026)** on top of PayPal's official hackathon starter template ([paypaldev/ag-paypal-demo](https://github.com/paypaldev/ag-paypal-demo)):
+
+- **Pre-Hackathon Official Starter Template (`c2d80f0..5de114e`, Sep 27 – Oct 12, 2026)**: Unmodified baseline commits from the official PayPal / AG Grid starter repository (`https://github.com/paypaldev/ag-paypal-demo`, authored by Eddie Jaoude and James Swinton-Bland), which provided the initial Next.js + AG Studio boilerplate.
+- **Built During the PayPal AI Hackathon (`ddad6e0..86e8323`, Nov 2 – Nov 12, 2026)**: 100% of **CreditRoll Live** was designed and implemented during the hackathon period, including:
+  1. **Deterministic End-Credits & Completion-Bond Reconciler + OpenAI Responses API Contract Review (`lib/credit-roll-reconciler.ts`, `lib/credit-roll-ai.ts`)**: Cut v1 → Cut v2 `UNPAID_GHOST` detection (`Moth`, `Nyx Frame`), stage-name-to-legal-contract identity resolution, live AI contract & cue reconciliation, integer-cent guardrail verification (`discardedAiAmountOverrides`), and `NEEDS_REVIEW` hold on ambiguous aliases (`Alex Rivera`).
+  2. **Three-Leg Live PayPal Sandbox Write & Read-Back Settlement Loop (`lib/paypal.ts`, `lib/credit-roll-settlement.ts`, `app/api/credit-roll/*`)**: `Orders v2 CAPTURE` + post-approval capture endpoint, `Invoicing v2 + QR Code`, `Batch Payouts v1` with `PayPal-Request-Id` idempotency, restart duplicate-batch lookup recovery, a separate `$0.01` single-recipient test payout, and per-item `transaction_status` read-back.
+  3. **35mm Screening Room Dossier & Two Custom AG Studio 3.0 Widgets (`app/page.tsx`, `app/dossier.ts`, `app/dashboard/studio/credit-roll-widgets.tsx`)**: Full "Midnight Cutting Table & Completion-Bond Ledger" UI redesign, `CreditRollStageWidget` (24fps sprocket-lit end-credits stage with `widgetApi.toggleCrossFilter` into AG Grid), and `GhostPatchbayWidget` (ivory tear-off voucher desk with live PayPal Sandbox & AI provider receipts).
+  4. **38 Automated Acceptance & Sandbox Boundary Tests (`tests/*.test.ts`)** and **45-Second Launch Film ([https://youtu.be/cE3SuZF7sic](https://youtu.be/cE3SuZF7sic))**.
+
+> - **Live Render HTTPS Deployment**: [https://paypal-credit-roll-live.onrender.com](https://paypal-credit-roll-live.onrender.com) ([Direct AG Studio Workspace](https://paypal-credit-roll-live.onrender.com/dashboard))
+> - **Always-Warm Cloud VM Mirror**: [http://144.202.121.72:3001](http://144.202.121.72:3001) ([Direct AG Studio Workspace](http://144.202.121.72:3001/dashboard))
+> - **GitHub Repository**: [https://github.com/GGGODLIN/paypal-credit-roll-live](https://github.com/GGGODLIN/paypal-credit-roll-live)
+
+---
+
 # CreditRoll Live
 
 ## Inspiration
